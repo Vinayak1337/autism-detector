@@ -47,7 +47,7 @@ describe('Home Page', () => {
     render(<HomePage />);
 
     expect(screen.getByText(/Quick Assessment/i)).toBeInTheDocument();
-    expect(screen.getByText(/Research Based/i)).toBeInTheDocument();
-    expect(screen.getByText(/Detailed Analysis/i)).toBeInTheDocument();
+    expect(screen.getByText(/Private & Secure/i)).toBeInTheDocument();
+    expect(screen.getByText(/Detailed Reports/i)).toBeInTheDocument();
   });
 });
