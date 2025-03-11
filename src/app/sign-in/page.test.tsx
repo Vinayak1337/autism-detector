@@ -1,24 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import SignInPage from './page';
 
+// Define interfaces for mock component props
+interface MockLinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
 // Mock the next/link component
 jest.mock('next/link', () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => {
+  return function MockLink({ href, children }: MockLinkProps) {
     return <a href={href}>{children}</a>;
   };
-  MockLink.displayName = 'MockLink';
-  return MockLink;
 });
 
-// Mock the Clerk SignIn component
-jest.mock('@clerk/nextjs', () => {
-  const MockSignIn = () => <div data-testid="clerk-sign-in">Clerk Sign In Component</div>;
-  MockSignIn.displayName = 'MockSignIn';
-
-  return {
-    SignIn: MockSignIn,
-  };
-});
+// Mock SignIn component
+jest.mock('@clerk/nextjs', () => ({
+  SignIn: function MockSignIn() {
+    return <div data-testid="sign-in-component">Sign In Component</div>;
+  },
+}));
 
 describe('Sign In Page', () => {
   it('renders the sign in heading', () => {
@@ -39,7 +40,7 @@ describe('Sign In Page', () => {
   it('renders the Clerk SignIn component', () => {
     render(<SignInPage />);
 
-    expect(screen.getByTestId('clerk-sign-in')).toBeInTheDocument();
+    expect(screen.getByTestId('sign-in-component')).toBeInTheDocument();
   });
 
   it('renders the sign up link', () => {

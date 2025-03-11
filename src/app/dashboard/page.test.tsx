@@ -1,13 +1,17 @@
 import { render, screen } from '@testing-library/react';
 import DashboardPage from './page';
 
+// Define interface for mock component props
+interface MockLinkProps {
+  href: string;
+  children: React.ReactNode;
+}
+
 // Mock the next/link component
 jest.mock('next/link', () => {
-  const MockLink = ({ children, href }: { children: React.ReactNode; href: string }) => {
+  return function MockLink({ href, children }: MockLinkProps) {
     return <a href={href}>{children}</a>;
   };
-  MockLink.displayName = 'MockLink';
-  return MockLink;
 });
 
 // Mock the Clerk useUser hook

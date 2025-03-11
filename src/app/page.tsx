@@ -12,12 +12,20 @@ export default function Home() {
         </p>
 
         <div className="mt-8">
-          <Link
-            href="/sign-up"
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-lg h-12 px-8"
-          >
-            Get Started
-          </Link>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/sign-up"
+              className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-lg h-12 px-8"
+            >
+              Get Started
+            </Link>
+            <Link
+              href="/about"
+              className="rounded-full border border-solid border-gray-300 dark:border-gray-700 transition-colors flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 font-medium text-lg h-12 px-8"
+            >
+              Learn About Autism Detection
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-8 mt-16 sm:grid-cols-3">
