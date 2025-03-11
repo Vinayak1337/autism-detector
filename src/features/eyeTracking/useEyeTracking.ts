@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { createFaceLandmarksDetector, FaceLandmarksDetector } from './faceLandmarkUtils';
+import { useEyeTrackingStore } from './store';
 
 // Updated interface to match the new API format
 interface FacePrediction {
@@ -44,9 +45,14 @@ const DEFAULT_OPTIONS: EyeTrackingOptions = {
 };
 
 export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingState {
-  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+  // Use the global state with Zustand
+  const setIsModelLoading = useEyeTrackingStore((state) => state.setIsModelLoading);
+  const setGazeData = useEyeTrackingStore((state) => state.setGazeData);
 
-  const [isModelLoading, setIsModelLoading] = useState(true);
+  // Memoize merged options to avoid unnecessary re-renders
+  const mergedOptions = useMemo(() => ({ ...DEFAULT_OPTIONS, ...options }), [options]);
+
+  const [isModelLoading, setLocalModelLoading] = useState(true);
   const [isWebcamLoading, setIsWebcamLoading] = useState(true);
   const [isTracking, setIsTracking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +73,11 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
         // Load the face landmarks detection model using our utility
         modelRef.current = await createFaceLandmarksDetector();
 
+        setLocalModelLoading(false);
         setIsModelLoading(false);
       } catch (err) {
         setError(`Failed to load model: ${err instanceof Error ? err.message : String(err)}`);
+        setLocalModelLoading(false);
         setIsModelLoading(false);
       }
     }
@@ -82,7 +90,7 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
         cancelAnimationFrame(requestAnimationRef.current);
       }
     };
-  }, []);
+  }, [setIsModelLoading]);
 
   // Setup webcam
   const setupWebcam = useCallback(async () => {
@@ -224,13 +232,16 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
           ctx.fill();
         }
 
-        // Call the onGazeMove callback if provided
+        // Call the onGazeMove callback if provided and update global state
         if (mergedOptions.onGazeMove) {
           mergedOptions.onGazeMove(gazePoint.x, gazePoint.y);
         }
+
+        // Update global state
+        setGazeData(gazePoint);
       }
     },
-    [mergedOptions]
+    [mergedOptions, setGazeData]
   );
 
   // Main detection loop
@@ -322,7 +333,7 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
   }, []);
 
   return {
-    isModelLoading,
+    isModelLoading: isModelLoading,
     isWebcamLoading,
     isTracking,
     error,

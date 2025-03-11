@@ -2,6 +2,7 @@ export { useEyeTracking } from './useEyeTracking';
 export { EyeTrackingComponent } from './EyeTrackingComponent';
 export { AnimatedBall } from './AnimatedBall';
 export { createFaceLandmarksDetector } from './faceLandmarkUtils';
+export { useEyeTrackingStore } from './store';
 export type { FaceLandmarksDetector } from './faceLandmarkUtils';
 export type { Point, TrackingPattern } from './AnimatedBall';
 export type { EyeTrackingOptions, EyeTrackingState } from './useEyeTracking';

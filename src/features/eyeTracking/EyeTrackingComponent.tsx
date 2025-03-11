@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useEyeTracking, EyeTrackingOptions } from './useEyeTracking';
+import { useEyeTrackingStore } from './store';
 
 interface EyeTrackingComponentProps {
   options?: EyeTrackingOptions;
@@ -16,12 +17,19 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
   width = '100%',
   height = 'auto',
 }) => {
+  // Use the global store
+  const setIsCameraReady = useEyeTrackingStore((state) => state.setIsCameraReady);
   const [isPermissionGranted, setIsPermissionGranted] = useState<boolean | null>(null);
 
   // Merge options with callback
   const mergedOptions: EyeTrackingOptions = {
     ...options,
-    onGazeMove: onGazeData,
+    onGazeMove: (x, y) => {
+      // Update both local callback and global state
+      if (onGazeData) {
+        onGazeData(x, y);
+      }
+    },
   };
 
   const {
@@ -44,22 +52,45 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
 
         if (videoDevices.length === 0) {
           setIsPermissionGranted(false);
+          setIsCameraReady(false);
           return;
         }
 
         // Try to access the camera
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         setIsPermissionGranted(true);
+        setIsCameraReady(true);
 
         // Stop the stream immediately since we're just checking permission
         stream.getTracks().forEach((track) => track.stop());
       } catch (err) {
         setIsPermissionGranted(false);
+        setIsCameraReady(false);
       }
     }
 
     checkPermission();
-  }, []);
+  }, [setIsCameraReady]);
+
+  // Auto-start tracking when component mounts if permission is granted
+  useEffect(() => {
+    if (isPermissionGranted && !isModelLoading && !isWebcamLoading && !isTracking) {
+      startTracking().catch(console.error);
+    }
+
+    return () => {
+      if (isTracking) {
+        stopTracking();
+      }
+    };
+  }, [
+    isPermissionGranted,
+    isModelLoading,
+    isWebcamLoading,
+    isTracking,
+    startTracking,
+    stopTracking,
+  ]);
 
   // Handle permission denied
   if (isPermissionGranted === false) {
@@ -81,7 +112,7 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-75 z-10">
           <div className="text-center">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-blue-600"></div>
-            <p className="mt-2 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-gray-800 font-medium">
               {isModelLoading ? 'Loading eye tracking model...' : 'Setting up webcam...'}
             </p>
           </div>
@@ -92,7 +123,7 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
       {error && (
         <div className="absolute inset-0 flex items-center justify-center bg-red-50 bg-opacity-75 z-10">
           <div className="text-center p-4">
-            <p className="text-red-600">{error}</p>
+            <p className="text-red-600 font-medium">{error}</p>
             <button
               className="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               onClick={() => window.location.reload()}
