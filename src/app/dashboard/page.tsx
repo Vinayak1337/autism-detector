@@ -23,7 +23,7 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="flex justify-between items-start">
             <div>
@@ -56,6 +56,42 @@ export default function DashboardPage() {
               className="inline-flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors w-full"
             >
               Start New Test
+            </Link>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+          <div className="flex justify-between items-start">
+            <div>
+              <h2 className="text-lg font-medium">Eye Tracking Test</h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">
+                Complete an eye tracking assessment to detect eye movement patterns.
+              </p>
+            </div>
+            <div className="w-10 h-10 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="text-green-500"
+              >
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+              </svg>
+            </div>
+          </div>
+          <div className="mt-4">
+            <Link
+              href="/eye-tracking-test"
+              className="inline-flex items-center justify-center bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors w-full"
+            >
+              Start Eye Tracking
             </Link>
           </div>
         </div>
@@ -107,6 +143,10 @@ export default function DashboardPage() {
           <p className="mt-2">
             <Link href="/dashboard/new-test" className="text-blue-500 hover:underline">
               Start your first assessment
+            </Link>
+            {' or '}
+            <Link href="/eye-tracking-test" className="text-green-500 hover:underline">
+              try the eye tracking test
             </Link>
           </p>
         </div>
