@@ -10,6 +10,7 @@ const publicPaths = [
   '/api/public*',
   '/about*',
   '/eye-test*',
+  '/eye-tracking-test*',
 ];
 
 const isPublic = (path: string) => {

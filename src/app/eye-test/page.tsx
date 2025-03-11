@@ -21,9 +21,9 @@ export default function EyeTestPage() {
           <ul className="list-disc pl-5 text-blue-700 space-y-2">
             <li>This test will track your eye movements using your webcam</li>
             <li>Make sure you are in a well-lit environment</li>
-            <li>Position your face so it's clearly visible in the camera</li>
+            <li>Position your face so it&apos;s clearly visible in the camera</li>
             <li>Try to keep your head relatively still during the test</li>
-            <li>Click "Start Tracking" when you're ready to begin</li>
+            <li>Click &quot;Start Tracking&quot; when you&apos;re ready to begin</li>
           </ul>
           <button
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
