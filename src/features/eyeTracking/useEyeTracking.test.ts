@@ -1,18 +1,15 @@
 import { renderHook, act } from '@testing-library/react';
 import { useEyeTracking } from './useEyeTracking';
 import * as tf from '@tensorflow/tfjs';
-import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
+import { createFaceLandmarksDetector } from './faceLandmarkUtils';
 
 // Mock the modules
 jest.mock('@tensorflow/tfjs', () => ({
   ready: jest.fn(),
 }));
 
-jest.mock('@tensorflow-models/face-landmarks-detection', () => ({
-  load: jest.fn(),
-  SupportedPackages: {
-    mediapipeFacemesh: 'mediapipeFacemesh',
-  },
+jest.mock('./faceLandmarkUtils', () => ({
+  createFaceLandmarksDetector: jest.fn(),
 }));
 
 // Mock canvas and video elements
@@ -56,7 +53,7 @@ describe('useEyeTracking', () => {
 
     // Mock successful initialization
     (tf.ready as jest.Mock).mockResolvedValue(undefined);
-    (faceLandmarksDetection.load as jest.Mock).mockResolvedValue(mockModel);
+    (createFaceLandmarksDetector as jest.Mock).mockResolvedValue(mockModel);
 
     // Mock HTML elements
     HTMLVideoElement.prototype.play = jest.fn().mockImplementation(function () {
@@ -111,12 +108,12 @@ describe('useEyeTracking', () => {
     renderHook(() => useEyeTracking());
 
     expect(tf.ready).toHaveBeenCalled();
-    expect(faceLandmarksDetection.load).toHaveBeenCalledWith('mediapipeFacemesh', { maxFaces: 1 });
+    expect(createFaceLandmarksDetector).toHaveBeenCalled();
   });
 
   it('sets error when model loading fails', async () => {
     const mockError = new Error('Failed to load model');
-    (faceLandmarksDetection.load as jest.Mock).mockRejectedValue(mockError);
+    (createFaceLandmarksDetector as jest.Mock).mockRejectedValue(mockError);
 
     const { result, rerender } = renderHook(() => useEyeTracking());
 
@@ -132,15 +129,19 @@ describe('useEyeTracking', () => {
   });
 
   it('starts tracking when startTracking is called', async () => {
-    // Mock successful face detection
+    // Mock successful face detection with new API format
     mockModel.estimateFaces.mockResolvedValue([
       {
-        scaledMesh: Array(468)
+        keypoints: Array(468)
           .fill()
-          .map((_, i) => ({ x: i, y: i, z: i })),
-        boundingBox: {
-          topLeft: [0, 0],
-          bottomRight: [100, 100],
+          .map((_, i) => ({ x: i, y: i, z: i, name: i % 10 === 0 ? `landmark${i}` : undefined })),
+        box: {
+          xMin: 0,
+          yMin: 0,
+          width: 100,
+          height: 100,
+          xMax: 100,
+          yMax: 100,
         },
       },
     ]);

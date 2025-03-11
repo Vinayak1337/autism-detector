@@ -1,20 +1,17 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
-import { MediaPipeFaceMesh } from '@tensorflow-models/face-landmarks-detection/dist/types';
+import { createFaceLandmarksDetector, FaceLandmarksDetector } from './faceLandmarkUtils';
 
-// Define types for face landmarks
-interface FaceLandmark {
-  x: number;
-  y: number;
-  z: number;
-}
-
+// Updated interface to match the new API format
 interface FacePrediction {
-  scaledMesh: FaceLandmark[];
-  boundingBox: {
-    topLeft: [number, number];
-    bottomRight: [number, number];
+  keypoints: { x: number; y: number; z?: number; name?: string }[];
+  box: {
+    xMin: number;
+    yMin: number;
+    width: number;
+    height: number;
+    xMax: number;
+    yMax: number;
   };
 }
 
@@ -56,7 +53,7 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
 
   const webcamRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const modelRef = useRef<MediaPipeFaceMesh | null>(null);
+  const modelRef = useRef<FaceLandmarksDetector | null>(null);
   const requestAnimationRef = useRef<number | null>(null);
   const gazeHistoryRef = useRef<Array<{ x: number; y: number }>>([]);
 
@@ -67,11 +64,8 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
         // Ensure TensorFlow is ready
         await tf.ready();
 
-        // Load the face landmarks detection model
-        modelRef.current = await faceLandmarksDetection.load(
-          faceLandmarksDetection.SupportedPackages.mediapipeFacemesh,
-          { maxFaces: 1 }
-        );
+        // Load the face landmarks detection model using our utility
+        modelRef.current = await createFaceLandmarksDetector();
 
         setIsModelLoading(false);
       } catch (err) {
@@ -119,19 +113,34 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
   const calculateEyeGaze = useCallback((landmarks: FacePrediction[] | null) => {
     if (!landmarks || landmarks.length === 0) return null;
 
-    // Get eye landmarks (using MediaPipe FaceMesh indices)
-    // Left eye: 130, 133, 160, 159, 158, 144, 145, 153
-    // Right eye: 362, 263, 386, 385, 384, 398, 386, 374
+    // Get eye landmarks (using MediaPipe FaceMesh indices for eye points)
+    // Left eye points
+    const leftEyePoints = landmarks[0].keypoints
+      .filter((point) => point.name && point.name.includes('leftEye'))
+      .map((point) => [point.x, point.y]);
 
-    // For simplicity, we'll use the center points of each eye
-    const leftEyePoints = [130, 133, 160, 159, 158, 144, 145, 153].map((idx) => [
-      landmarks[0].scaledMesh[idx].x,
-      landmarks[0].scaledMesh[idx].y,
-    ]);
-    const rightEyePoints = [362, 263, 386, 385, 384, 398, 386, 374].map((idx) => [
-      landmarks[0].scaledMesh[idx].x,
-      landmarks[0].scaledMesh[idx].y,
-    ]);
+    // Right eye points
+    const rightEyePoints = landmarks[0].keypoints
+      .filter((point) => point.name && point.name.includes('rightEye'))
+      .map((point) => [point.x, point.y]);
+
+    // If we don't have enough eye landmarks, try to use fallback indices
+    if (leftEyePoints.length === 0 || rightEyePoints.length === 0) {
+      // Fallback to using eye corner points
+      const leftEyeInner = landmarks[0].keypoints.find((p) => p.name === 'leftEyeInner');
+      const leftEyeOuter = landmarks[0].keypoints.find((p) => p.name === 'leftEyeOuter');
+      const rightEyeInner = landmarks[0].keypoints.find((p) => p.name === 'rightEyeInner');
+      const rightEyeOuter = landmarks[0].keypoints.find((p) => p.name === 'rightEyeOuter');
+
+      if (leftEyeInner && leftEyeOuter && rightEyeInner && rightEyeOuter) {
+        return {
+          x: (leftEyeInner.x + leftEyeOuter.x + rightEyeInner.x + rightEyeOuter.x) / 4,
+          y: (leftEyeInner.y + leftEyeOuter.y + rightEyeInner.y + rightEyeOuter.y) / 4,
+        };
+      }
+
+      return null;
+    }
 
     // Calculate eye centers
     const leftEyeCenter = leftEyePoints.reduce(
@@ -170,20 +179,16 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
       if (mergedOptions.drawLandmarks && landmarks && landmarks.length > 0) {
         ctx.fillStyle = mergedOptions.landmarkColor || 'rgba(0, 255, 0, 0.7)';
 
-        // Draw eye landmarks
-        const eyeIndices = [
-          // Left eye
-          130, 133, 160, 159, 158, 144, 145, 153,
-          // Right eye
-          362, 263, 386, 385, 384, 398, 386, 374,
-        ];
-
-        eyeIndices.forEach((index) => {
-          const point = [landmarks[0].scaledMesh[index].x, landmarks[0].scaledMesh[index].y];
-          ctx.beginPath();
-          ctx.arc(point[0], point[1], 2, 0, 2 * Math.PI);
-          ctx.fill();
-        });
+        // Draw eye keypoints
+        landmarks[0].keypoints
+          .filter(
+            (point) => point.name && (point.name.includes('Eye') || point.name.includes('eye'))
+          )
+          .forEach((point) => {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 2, 0, 2 * Math.PI);
+            ctx.fill();
+          });
       }
 
       // Update gaze history
@@ -246,13 +251,8 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Detect face landmarks
-      const predictions = await modelRef.current.estimateFaces({
-        input: video,
-        returnTensors: false,
-        flipHorizontal: false,
-        predictIrises: true,
-      });
+      // Detect face landmarks using the updated API
+      const predictions = await modelRef.current.estimateFaces(video);
 
       // Calculate eye gaze
       const gazePoint = calculateEyeGaze(predictions);
