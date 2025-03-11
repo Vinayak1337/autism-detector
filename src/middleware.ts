@@ -9,6 +9,7 @@ const publicPaths = [
   '/api/webhook*',
   '/api/public*',
   '/about*',
+  '/eye-test*',
 ];
 
 const isPublic = (path: string) => {
