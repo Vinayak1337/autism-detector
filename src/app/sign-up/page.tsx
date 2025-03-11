@@ -19,7 +19,7 @@ export default function SignUpPage() {
             path="/sign-up"
             signInUrl="/sign-in"
             afterSignUpUrl="/dashboard"
-            routing="path"
+            routing="hash"
             appearance={{
               elements: {
                 formButtonPrimary:
