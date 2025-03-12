@@ -63,7 +63,7 @@ export default function AboutPage() {
             </li>
             <li>
               <span className="font-medium">Joint Attention:</span> Differences in the ability to
-              follow another person's gaze or establish shared attention on objects.
+              follow another person&apos;s gaze or establish shared attention on objects.
             </li>
           </ul>
 

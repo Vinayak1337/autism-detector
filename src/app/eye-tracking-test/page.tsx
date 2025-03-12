@@ -1,400 +1,398 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
-import {
-  EyeTrackingComponent,
-  AnimatedBall,
-  Point,
-  analyzeEyeMovementData,
-  EyeMovementData,
-  AnalysisResult,
-  useEyeTrackingStore,
-} from '@/features/eyeTracking';
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { EyeTrackingComponent } from '@/features/eyeTracking/EyeTrackingComponent';
+import { AnimatedBall, Point } from '@/features/eyeTracking/AnimatedBall';
+import { useEyeTrackingStore, TestPhase } from '@/features/eyeTracking/store';
+import { analyzeEyeMovementData } from '@/features/eyeTracking/dataProcessing';
 
-export default function EyeTrackingTestPage() {
-  // Use the global store from Zustand
+const EyeTrackingTestPage: React.FC = () => {
+  const router = useRouter();
+
+  // Access the global eye tracking store
   const {
     testPhase,
     setTestPhase,
-    gazeData,
-    targetPosition,
-    setTargetPosition,
-    eyeMovementData,
-    addEyeMovementData,
-    clearEyeMovementData,
-    analysisResult,
-    setAnalysisResult,
-    startTime,
-    setStartTime,
     isCameraReady,
+    eyeDetected,
+    gazeData,
+    startTest,
+    endTest,
+    setAnalysisResults,
   } = useEyeTrackingStore();
 
-  // Refs for access across components
-  const testContainerRef = useRef<HTMLDivElement>(null);
+  // Add ref for scrolling to animation box
+  const animationBoxRef = useRef<HTMLDivElement>(null);
 
-  // Test parameters
-  const testDuration = 60; // seconds
-  const testBoxSize = 500; // pixels
-  const ballSize = 20; // pixels
+  // Store target positions for analysis
+  const [targetPositions, setTargetPositions] = useState<Array<{ x: number; y: number }>>([]);
+  const [testTimestamps, setTestTimestamps] = useState<number[]>([]);
 
-  // Handle gaze position data from eye tracking
-  const handleGazeData = (x: number, y: number) => {
-    // Only add data during the testing phase
-    if (testPhase === 'testing' && targetPosition && startTime) {
-      const timestamp = Date.now() - startTime;
+  // Add stats tracking
+  const [eyeStats, setEyeStats] = useState({
+    eyesDetected: false,
+    gazePointsCollected: 0,
+    accuracy: 0,
+    coverage: 0,
+    lastPosition: { x: 50, y: 50 },
+  });
 
-      addEyeMovementData({
-        timestamp,
-        position: { x, y },
-        targetPosition,
+  // Update stats when gaze data changes
+  useEffect(() => {
+    if (gazeData.length > 0) {
+      const lastPoint = gazeData[gazeData.length - 1];
+      let accuracy = 0;
+      let coverage = 0;
+
+      // Calculate accuracy if we have both gaze and target data
+      if (targetPositions.length > 0) {
+        // Simple distance-based accuracy calculation
+        const targetPoint = targetPositions[targetPositions.length - 1];
+        const distance = Math.sqrt(
+          Math.pow(lastPoint.x - targetPoint.x, 2) + Math.pow(lastPoint.y - targetPoint.y, 2)
+        );
+        accuracy = Math.max(0, 100 - distance * 2); // Lower distance = higher accuracy
+
+        // Coverage - how much of the tracking area has been covered
+        coverage = Math.min(100, (gazeData.length / 300) * 100);
+      }
+
+      setEyeStats({
+        eyesDetected: eyeDetected,
+        gazePointsCollected: gazeData.length,
+        accuracy,
+        coverage,
+        lastPosition: lastPoint,
       });
     }
-  };
+  }, [gazeData, targetPositions, eyeDetected]);
 
-  // Handle target ball position changes
-  const handleBallPositionChange = (position: Point) => {
-    if (testContainerRef.current) {
-      // Convert position to screen coordinates
-      const rect = testContainerRef.current.getBoundingClientRect();
-      setTargetPosition({
-        x: rect.left + position.x + ballSize / 2,
-        y: rect.top + position.y + ballSize / 2,
-      });
+  // Auto-scroll to animation box when test starts
+  useEffect(() => {
+    if (testPhase === 'testing' && animationBoxRef.current) {
+      // Wait a moment for the UI to render then scroll
+      setTimeout(() => {
+        animationBoxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 500);
     }
-  };
+  }, [testPhase]);
 
-  // Start the test
-  const startTest = () => {
-    setTestPhase('testing');
-    clearEyeMovementData();
-    setStartTime(Date.now());
+  // Record target position during test
+  const handleBallPositionUpdate = (position: { x: number; y: number }) => {
+    setTargetPositions((prev) => [...prev, position]);
+    setTestTimestamps((prev) => [...prev, Date.now()]);
   };
 
   // Handle test completion
   const handleTestComplete = () => {
-    // Analyze collected data
-    const result = analyzeEyeMovementData(eyeMovementData);
-    setAnalysisResult(result);
-    setTestPhase('results');
-  };
+    // Make sure we have enough data to analyze
+    if (gazeData.length > 10 && targetPositions.length > 10) {
+      try {
+        // Create consistent timestamps if missing
+        const timestamps =
+          testTimestamps.length === gazeData.length
+            ? testTimestamps
+            : Array.from(
+                { length: gazeData.length },
+                (_, i) => Date.now() - (gazeData.length - i) * 100
+              );
 
-  // Reset the test
-  const resetTest = () => {
-    setTestPhase('ready');
-    clearEyeMovementData();
-    setAnalysisResult(null);
-    setStartTime(null);
-  };
+        // Analyze eye movement data
+        const results = analyzeEyeMovementData(gazeData, targetPositions, timestamps);
 
-  // Get color based on risk assessment
-  const getRiskColor = (risk: string) => {
-    switch (risk) {
-      case 'Low Risk':
-        return 'text-green-600';
-      case 'Medium Risk':
-        return 'text-yellow-600';
-      case 'High Risk':
-        return 'text-red-600';
-      default:
-        return 'text-gray-600';
+        // Update store with results
+        setAnalysisResults(results);
+
+        // Navigate to results page
+        router.push('/eye-tracking-results');
+      } catch (error) {
+        console.error('Error analyzing eye movement data:', error);
+      }
+    } else {
+      console.warn('Not enough data to analyze');
+      router.push('/eye-tracking-results');
     }
   };
 
-  // Clean up when component unmounts
-  useEffect(() => {
-    return () => {
-      clearEyeMovementData();
-      setAnalysisResult(null);
-      setStartTime(null);
-      setTestPhase('intro');
-    };
-  }, [clearEyeMovementData, setAnalysisResult, setStartTime, setTestPhase]);
+  // Add a custom handler for gaze data
+  const handleGazeData = (data: Point) => {
+    // Update the current eye position for real-time display
+    setEyeStats((prev) => ({
+      ...prev,
+      lastPosition: data,
+    }));
+  };
 
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6 text-gray-900">Eye Tracking Test</h1>
+  // Render content based on test phase
+  const renderPhaseContent = () => {
+    // Cast testPhase to string to avoid TypeScript errors
+    const phase = testPhase as string;
 
-      {/* Introduction Phase */}
-      {testPhase === 'intro' && (
-        <div className="bg-blue-50 p-6 rounded-lg shadow-md mb-8">
-          <h2 className="text-xl font-semibold text-blue-800 mb-4">
-            Welcome to the Eye Tracking Test
-          </h2>
-          <p className="mb-4 text-blue-900">
-            This test will track your eye movements as you follow a ball moving in a square pattern.
-            The test helps assess visual attention patterns that may be relevant for autism
-            screening.
-          </p>
-
-          <h3 className="text-lg font-medium text-blue-700 mt-6 mb-2">How It Works:</h3>
-          <ol className="list-decimal pl-5 space-y-2 text-blue-700 mb-6">
-            <li>First, we&apos;ll ask for permission to access your webcam</li>
-            <li>
-              You&apos;ll see a blue ball moving in a square pattern (left → down → right → up)
-            </li>
-            <li>Follow the ball with your eyes only, keeping your head still</li>
-            <li>The test will last for {testDuration} seconds</li>
-            <li>At the end, we&apos;ll show an analysis of your eye movements</li>
-          </ol>
-
-          <div className="mt-6 flex justify-center">
+    switch (phase) {
+      case 'intro':
+        return (
+          <div className="text-center">
+            <h1 className="text-3xl font-bold mb-6">Eye Tracking Test</h1>
+            <p className="mb-4">
+              This test will track your eye movements as you follow a moving ball on the screen.
+            </p>
+            <p className="mb-8">
+              Please enable your webcam when prompted and look directly at the camera.
+            </p>
             <button
-              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium shadow-sm"
-              onClick={() => setTestPhase('ready')}
+              onClick={() => setTestPhase('setup' as TestPhase)}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-lg hover:bg-indigo-700 transition-colors"
             >
               Get Started
             </button>
           </div>
-        </div>
-      )}
+        );
 
-      {/* Setup Phase */}
-      {testPhase === 'ready' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4 text-gray-900">Camera Setup</h2>
-              <p className="mb-4 text-gray-700">
-                Position yourself approximately 50cm from the screen and make sure your face is
-                clearly visible. The eye tracking component below should show your face with
-                tracking points.
+      case 'setup':
+        return (
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Setting Up Camera</h2>
+            <p className="mb-4">Please allow access to your webcam.</p>
+            <div className="w-full max-w-lg mx-auto h-96 border-2 border-gray-300 rounded-lg overflow-hidden relative">
+              <EyeTrackingComponent
+                width="100%"
+                height="100%"
+                testPhase={phase as any}
+                onEyeDetected={(detected) => {
+                  if (detected && isCameraReady) {
+                    setTestPhase('ready' as TestPhase);
+                  }
+                }}
+              />
+            </div>
+
+            {/* Add additional status indicators and manual controls */}
+            <div className="mt-6 text-center">
+              <div className="flex items-center justify-center mb-4 space-x-4">
+                <div className="flex items-center">
+                  <div
+                    className={`h-3 w-3 rounded-full ${isCameraReady ? 'bg-green-500' : 'bg-gray-300'} mr-2`}
+                  ></div>
+                  <span className="text-sm">Camera Ready</span>
+                </div>
+                <div className="flex items-center">
+                  <div
+                    className={`h-3 w-3 rounded-full ${eyeDetected ? 'bg-green-500' : 'bg-gray-300'} mr-2`}
+                  ></div>
+                  <span className="text-sm">Eyes Detected</span>
+                </div>
+              </div>
+
+              {isCameraReady && !eyeDetected && (
+                <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-amber-800 text-sm">
+                    Eyes not detected yet. Make sure your face is clearly visible in the camera view
+                    and there is sufficient lighting.
+                  </p>
+                </div>
+              )}
+
+              {isCameraReady && (
+                <button
+                  onClick={() => setTestPhase('ready' as TestPhase)}
+                  className="mt-4 px-4 py-2 bg-indigo-500 text-white rounded hover:bg-indigo-600 transition-colors"
+                >
+                  Continue Anyway
+                </button>
+              )}
+
+              {!isCameraReady && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-blue-800 text-sm">
+                    Waiting for camera access. If you've already allowed access but still see this
+                    message, try refreshing the page.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'ready':
+        return (
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Ready to Begin</h2>
+            <p className="mb-4">The test will take approximately 60 seconds to complete.</p>
+            <p className="mb-4">Follow the ball with your eyes as it moves around the screen.</p>
+            <p className="mb-6">Try not to move your head - just your eyes.</p>
+            <button
+              onClick={startTest}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-lg hover:bg-indigo-700 transition-colors"
+              disabled={!eyeDetected}
+            >
+              Start Test
+            </button>
+            {!eyeDetected && (
+              <p className="mt-4 text-amber-600">Please position your face in the camera view.</p>
+            )}
+          </div>
+        );
+
+      case 'testing':
+        return (
+          <div className="relative w-full h-full flex flex-col">
+            {/* Status header with clear visual feedback */}
+            <div className="bg-white bg-opacity-90 p-4 text-center shadow-md z-10">
+              <h2 className="text-xl font-bold">Follow the Ball</h2>
+              <p className="text-gray-600">
+                Keep your eyes on the ball as it moves around the square pattern.
               </p>
+              <div className="mt-2 flex items-center justify-center space-x-2">
+                <div
+                  className={`h-3 w-3 rounded-full ${eyeDetected ? 'bg-green-500' : 'bg-red-500'}`}
+                ></div>
+                <span className={`text-sm ${eyeDetected ? 'text-green-600' : 'text-red-600'}`}>
+                  {eyeDetected ? 'Eyes detected' : 'Eyes not detected'}
+                </span>
+                <span className="text-xs text-gray-500">
+                  ({gazeData.length} data points collected)
+                </span>
+              </div>
+            </div>
 
-              <div className="aspect-video relative rounded overflow-hidden border border-gray-200">
-                <EyeTrackingComponent
-                  width="100%"
-                  height="100%"
-                  onGazeData={handleGazeData}
-                  options={{
-                    drawLandmarks: true,
-                    drawPath: false,
-                  }}
+            {/* Webcam area with fixed height */}
+            <div className="w-full" style={{ height: '300px' }}>
+              <EyeTrackingComponent
+                width="100%"
+                height="100%"
+                testPhase={phase as any}
+                onGazeData={handleGazeData}
+              />
+            </div>
+
+            {/* Eye tracking statistics panel */}
+            <div className="bg-gray-50 p-4 border-t border-b border-gray-200">
+              <h3 className="text-md font-semibold text-gray-700 mb-2">Eye Tracking Stats</h3>
+              <div className="grid grid-cols-4 gap-2">
+                <div className="bg-white p-2 rounded border border-gray-200">
+                  <div className="text-xs text-gray-500">Detection</div>
+                  <div className="font-medium flex items-center">
+                    <div
+                      className={`h-2 w-2 rounded-full mr-1 ${eyeStats.eyesDetected ? 'bg-green-500' : 'bg-red-500'}`}
+                    ></div>
+                    {eyeStats.eyesDetected ? 'Active' : 'Inactive'}
+                  </div>
+                </div>
+                <div className="bg-white p-2 rounded border border-gray-200">
+                  <div className="text-xs text-gray-500">Data Points</div>
+                  <div className="font-medium">{eyeStats.gazePointsCollected}</div>
+                </div>
+                <div className="bg-white p-2 rounded border border-gray-200">
+                  <div className="text-xs text-gray-500">Accuracy</div>
+                  <div className="font-medium">{eyeStats.accuracy.toFixed(1)}%</div>
+                </div>
+                <div className="bg-white p-2 rounded border border-gray-200">
+                  <div className="text-xs text-gray-500">Coverage</div>
+                  <div className="font-medium">{eyeStats.coverage.toFixed(1)}%</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Animation box with the ball - explicitly sized */}
+            <div
+              ref={animationBoxRef}
+              className="flex-grow relative border-2 border-gray-300 rounded-lg mx-4 my-4 overflow-hidden"
+              style={{ height: '400px', background: 'white' }}
+            >
+              <div className="absolute inset-0">
+                <AnimatedBall
+                  onComplete={handleTestComplete}
+                  onPositionUpdate={handleBallPositionUpdate}
+                  size={36}
+                  showPath={true}
+                  showLabels={true}
                 />
               </div>
 
-              <div className="mt-4">
-                <p className="text-sm text-gray-800 font-medium mb-2">
-                  Eye position detected: {gazeData ? 'Yes' : 'No'}
-                </p>
-                {gazeData && (
-                  <p className="text-sm text-gray-700">
-                    Coordinates: ({Math.round(gazeData.x)}, {Math.round(gazeData.y)})
-                  </p>
-                )}
+              {/* Position indicator */}
+              <div className="absolute bottom-2 left-2 bg-white bg-opacity-75 rounded p-1 text-xs">
+                <span className="font-medium">Eye Position:</span>
+                <span className="ml-1">
+                  x: {eyeStats.lastPosition.x.toFixed(1)}, y: {eyeStats.lastPosition.y.toFixed(1)}
+                </span>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4 text-gray-900">Test Instructions</h2>
-
-              <ul className="list-disc pl-5 space-y-3 text-gray-700 mb-6">
-                <li>
-                  Follow the blue ball with your <strong>eyes only</strong> as it moves around
-                </li>
-                <li>Try to keep your head relatively still during the test</li>
-                <li>The ball will move in a square pattern: left → down → right → up</li>
-                <li>The test will last for {testDuration} seconds</li>
-                <li>For best results, ensure you are in a well-lit environment</li>
-              </ul>
-
-              <div className="bg-yellow-50 p-4 rounded-md mb-6">
-                <p className="text-sm text-yellow-800">
-                  <strong>Important:</strong> This test is not a medical diagnosis. It is designed
-                  to help identify patterns that may warrant further professional assessment.
-                </p>
+            {/* Bottom controls in a fixed bar */}
+            <div className="p-4 bg-white bg-opacity-90 border-t border-gray-200 flex justify-between items-center">
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">Progress:</span>
+                <div className="w-32 h-2 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                  <div
+                    className="h-full bg-indigo-600 transition-all duration-100"
+                    style={{
+                      width: `${Math.min((gazeData.length / 300) * 100, 100)}%`,
+                    }}
+                  ></div>
+                </div>
               </div>
-
-              <div className="flex justify-center">
-                <button
-                  className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium shadow-sm"
-                  onClick={startTest}
-                  disabled={!isCameraReady || !gazeData}
-                >
-                  {!gazeData ? 'Waiting for eye detection...' : 'Start Test'}
-                </button>
-              </div>
+              <button
+                onClick={endTest}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg shadow-sm hover:bg-red-700 transition-colors"
+              >
+                Cancel Test
+              </button>
             </div>
           </div>
+        );
+
+      case 'results':
+        // Should normally redirect to results page
+        return (
+          <div className="text-center">
+            <h2 className="text-2xl font-bold mb-4">Test Complete</h2>
+            <p className="mb-4">Thank you for completing the eye tracking test.</p>
+            <p className="mb-6">Processing your results...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600 mx-auto"></div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // Cast testPhase to string to avoid TypeScript errors
+  const phase = testPhase as string;
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8 px-4">
+      <div className="max-w-6xl mx-auto">
+        {/* Main content area - make it taller for testing phase */}
+        <div
+          className={`bg-white rounded-lg shadow-lg ${
+            phase === 'testing' ? 'min-h-[90vh] overflow-auto p-0' : 'min-h-[70vh] p-8'
+          }`}
+        >
+          {renderPhaseContent()}
         </div>
-      )}
 
-      {/* Testing Phase */}
-      {testPhase === 'testing' && (
-        <div className="flex flex-col items-center">
-          <div className="mb-6 max-w-md text-center">
-            <h2 className="text-xl font-semibold mb-2 text-gray-900">Follow the Ball</h2>
-            <p className="text-gray-700">
-              Keep your head still and follow the blue ball with your eyes only.
+        {/* Instructions at bottom */}
+        {phase !== 'testing' && (
+          <div className="mt-6 text-center text-gray-600">
+            <p>For best results, please use a computer with a good webcam in a well-lit room.</p>
+            <p className="mt-2 text-sm">
+              Position your face clearly in the camera view and minimize background movement.
             </p>
-          </div>
-
-          <div className="flex flex-col md:flex-row items-center gap-6 mb-8">
-            <div className="bg-white p-4 rounded-lg shadow-md">
-              <div className="h-32 w-48 relative rounded overflow-hidden">
-                <EyeTrackingComponent
-                  width="100%"
-                  height="100%"
-                  onGazeData={handleGazeData}
-                  options={{
-                    drawLandmarks: true,
-                    drawPath: false,
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="bg-blue-50 p-4 rounded-lg shadow-md">
-              <h3 className="font-medium text-blue-700 mb-2">Testing in Progress</h3>
-              <ul className="text-sm text-blue-700 list-disc pl-5 space-y-1">
-                <li>Keep your head still</li>
-                <li>Follow the ball with your eyes only</li>
-                <li>Try to stay focused on the ball</li>
-              </ul>
+            <div className="mt-4">
+              <a
+                href="/eye-tracking-test/square-animation-test"
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors text-sm inline-block"
+              >
+                Try Dedicated Square Animation Test
+              </a>
             </div>
           </div>
-
-          <div ref={testContainerRef} className="relative mb-8">
-            <AnimatedBall
-              size={testBoxSize}
-              ballSize={ballSize}
-              duration={testDuration}
-              pattern="square"
-              onPositionChange={handleBallPositionChange}
-              onComplete={handleTestComplete}
-            />
-          </div>
-
-          <button
-            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 shadow-sm"
-            onClick={resetTest}
-          >
-            Cancel Test
-          </button>
-        </div>
-      )}
-
-      {/* Results Phase */}
-      {testPhase === 'results' && analysisResult && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h2 className="text-2xl font-bold mb-4 text-gray-900">Test Results</h2>
-              <p className="mb-6 text-gray-700">
-                Based on your eye movement patterns during the test, we&apos;ve generated the
-                following analysis. These measurements help identify certain patterns that may be
-                relevant for autism screening.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-medium mb-2 text-gray-900">Risk Assessment</h3>
-                  <p
-                    className={`text-2xl font-bold ${getRiskColor(analysisResult.riskAssessment)}`}
-                  >
-                    {analysisResult.riskAssessment}
-                  </p>
-                  <p className="mt-2 text-sm text-gray-700">
-                    Based on eye movement patterns, coordination, and fixation behaviors
-                  </p>
-                </div>
-
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-lg font-medium mb-2 text-gray-900">Eye Metrics</h3>
-                  <ul className="space-y-2">
-                    <li className="flex justify-between">
-                      <span className="text-gray-700">Fixation duration:</span>
-                      <span className="font-medium text-gray-900">
-                        {Math.round(analysisResult.averageFixationDuration)}ms
-                      </span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-700">Saccade frequency:</span>
-                      <span className="font-medium text-gray-900">
-                        {analysisResult.saccadeFrequency.toFixed(2)}/sec
-                      </span>
-                    </li>
-                    <li className="flex justify-between">
-                      <span className="text-gray-700">Wiggle score:</span>
-                      <span className="font-medium text-gray-900">
-                        {Math.round(analysisResult.wiggleScore)}
-                      </span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="bg-yellow-50 p-4 rounded-md mb-6">
-                <p className="text-sm text-yellow-800">
-                  <strong>Important:</strong> This assessment is not a medical diagnosis. It is
-                  designed as a screening tool to identify patterns that may warrant further
-                  professional assessment.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-4">
-                <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm"
-                  onClick={resetTest}
-                >
-                  Take Test Again
-                </button>
-                <a
-                  href="/dashboard"
-                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                >
-                  Return to Dashboard
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-lg p-6">
-              <h3 className="text-xl font-bold mb-4 text-gray-900">What These Results Mean</h3>
-
-              <div className="space-y-4">
-                <div>
-                  <h4 className="font-medium text-gray-900">Fixation Duration</h4>
-                  <p className="text-sm text-gray-700">
-                    How long your eyes typically stayed focused on a point. Shorter durations may
-                    indicate difficulty maintaining visual attention.
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-gray-900">Saccade Frequency</h4>
-                  <p className="text-sm text-gray-700">
-                    How often your eyes made rapid movements. Higher frequencies may indicate
-                    patterns of visual processing seen in some neurodivergent individuals.
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-medium text-gray-900">Wiggle Score</h4>
-                  <p className="text-sm text-gray-700">
-                    Measures unwanted eye movements perpendicular to the target direction. Higher
-                    scores may indicate challenges with smooth pursuit eye movements.
-                  </p>
-                </div>
-
-                <div className="pt-4 border-t border-gray-200">
-                  <h4 className="font-medium text-gray-900">What Next?</h4>
-                  <p className="text-sm text-gray-700 mb-2">
-                    If your results indicate medium or high risk:
-                  </p>
-                  <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
-                    <li>Consider taking the test again in a well-lit, quiet environment</li>
-                    <li>Take our other screening assessments</li>
-                    <li>Consider consulting with a healthcare professional</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
-}
+};
+
+export default EyeTrackingTestPage;

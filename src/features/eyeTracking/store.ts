@@ -1,72 +1,116 @@
+'use client';
+
 import { create } from 'zustand';
 import { Point } from './AnimatedBall';
-import { EyeMovementData, AnalysisResult } from './dataProcessing';
+import { devtools } from 'zustand/middleware';
 
-interface EyeTrackingState {
-  // Test phase state
-  testPhase: 'intro' | 'ready' | 'testing' | 'results';
-  setTestPhase: (phase: 'intro' | 'ready' | 'testing' | 'results') => void;
+// Define test phases for eye tracking flow
+export type TestPhase = 'intro' | 'setup' | 'ready' | 'testing' | 'results';
 
-  // Eye tracking data
-  gazeData: { x: number; y: number } | null;
-  setGazeData: (data: { x: number; y: number } | null) => void;
-
-  // Target position data
-  targetPosition: Point | null;
-  setTargetPosition: (position: Point | null) => void;
-
-  // Eye movement data collection
-  eyeMovementData: EyeMovementData[];
-  addEyeMovementData: (data: EyeMovementData) => void;
-  clearEyeMovementData: () => void;
-
-  // Analysis results
-  analysisResult: AnalysisResult | null;
-  setAnalysisResult: (result: AnalysisResult | null) => void;
-
-  // Test control
-  startTime: number | null;
-  setStartTime: (time: number | null) => void;
-
-  // Model and camera state
-  isModelLoading: boolean;
-  setIsModelLoading: (loading: boolean) => void;
-
-  isCameraReady: boolean;
-  setIsCameraReady: (ready: boolean) => void;
+// Define the interface for analysis results
+export interface AnalysisResult {
+  saccadeFrequency: number;
+  averageFixationDuration: number;
+  wiggleScore: number;
+  deviationScore: number;
+  riskAssessment: string;
+  testDate: Date;
+  fixationPercentage: number;
 }
 
-export const useEyeTrackingStore = create<EyeTrackingState>((set) => ({
-  // Test phase state
-  testPhase: 'intro',
-  setTestPhase: (phase) => set({ testPhase: phase }),
+// Define the store's state
+export interface EyeTrackingState {
+  // Camera and model status
+  isModelLoading: boolean;
+  isCameraReady: boolean;
+  eyeDetected: boolean;
 
-  // Eye tracking data
-  gazeData: null,
-  setGazeData: (data) => set({ gazeData: data }),
+  // Test status
+  testPhase: TestPhase;
+  testStartTime: Date | null;
+  testEndTime: Date | null;
 
-  // Target position data
-  targetPosition: null,
-  setTargetPosition: (position) => set({ targetPosition: position }),
-
-  // Eye movement data collection
-  eyeMovementData: [],
-  addEyeMovementData: (data) =>
-    set((state) => ({ eyeMovementData: [...state.eyeMovementData, data] })),
-  clearEyeMovementData: () => set({ eyeMovementData: [] }),
+  // Gaze data
+  gazeData: Point[];
 
   // Analysis results
-  analysisResult: null,
-  setAnalysisResult: (result) => set({ analysisResult: result }),
+  analysisResults: AnalysisResult | null;
 
-  // Test control
-  startTime: null,
-  setStartTime: (time) => set({ startTime: time }),
+  // Actions
+  setIsModelLoading: (loading: boolean) => void;
+  setIsCameraReady: (isReady: boolean) => void;
+  setEyeDetected: (detected: boolean) => void;
+  setTestPhase: (phase: TestPhase) => void;
+  setGazeData: (data: Point[]) => void;
+  addGazePoint: (point: Point) => void;
+  clearGazeData: () => void;
+  startTest: () => void;
+  endTest: () => void;
+  setAnalysisResults: (results: AnalysisResult) => void;
+  resetTest: () => void;
+}
 
-  // Model and camera state
-  isModelLoading: true,
-  setIsModelLoading: (loading) => set({ isModelLoading: loading }),
+export const useEyeTrackingStore = create<EyeTrackingState>()(
+  devtools(
+    (set, get) => ({
+      // Camera and model status
+      isModelLoading: true,
+      isCameraReady: false,
+      eyeDetected: false,
 
-  isCameraReady: false,
-  setIsCameraReady: (ready) => set({ isCameraReady: ready }),
-}));
+      // Test status
+      testPhase: 'intro',
+      testStartTime: null,
+      testEndTime: null,
+
+      // Gaze data
+      gazeData: [],
+
+      // Analysis results
+      analysisResults: null,
+
+      // Actions
+      setIsModelLoading: (loading) => set({ isModelLoading: loading }),
+      setIsCameraReady: (isReady) => set({ isCameraReady: isReady }),
+      setEyeDetected: (detected) => set({ eyeDetected: detected }),
+
+      setTestPhase: (phase) => set({ testPhase: phase }),
+
+      setGazeData: (data) => set({ gazeData: data }),
+
+      addGazePoint: (point) =>
+        set((state) => ({
+          gazeData: [...state.gazeData, point],
+        })),
+
+      clearGazeData: () => set({ gazeData: [] }),
+
+      startTest: () =>
+        set({
+          testPhase: 'testing',
+          testStartTime: new Date(),
+          gazeData: [], // Clear previous data
+        }),
+
+      endTest: () =>
+        set((state) => ({
+          testPhase: 'results',
+          testEndTime: new Date(),
+        })),
+
+      setAnalysisResults: (results) => set({ analysisResults: results }),
+
+      resetTest: () =>
+        set({
+          testPhase: 'intro',
+          testStartTime: null,
+          testEndTime: null,
+          gazeData: [],
+          analysisResults: null,
+        }),
+    }),
+    {
+      name: 'eye-tracking-store',
+    }
+  )
+);

@@ -1,10 +1,12 @@
+'use client';
+
 import { Point } from './AnimatedBall';
 
 // Types for eye tracking data analysis
 export interface EyeMovementData {
-  timestamp: number;
-  position: Point;
+  eyePosition: Point;
   targetPosition: Point;
+  timestamp: number;
 }
 
 export interface FixationData {
@@ -23,306 +25,352 @@ export interface SaccadeData {
   velocity: number;
 }
 
+// Make this compatible with the store's version
 export interface AnalysisResult {
-  fixations: FixationData[];
-  saccades: SaccadeData[];
-  averageFixationDuration: number;
   saccadeFrequency: number;
+  averageFixationDuration: number;
   wiggleScore: number;
-  riskAssessment: 'Low Risk' | 'Medium Risk' | 'High Risk';
   deviationScore: number;
+  riskAssessment: string; // Match the string type from store.ts
+  testDate: Date;
+  fixationPercentage: number;
 }
 
 // Constants for analysis
-const FIXATION_THRESHOLD = 30; // pixels - max movement to be considered a fixation
-const SACCADE_THRESHOLD = 50; // pixels - min movement to be considered a saccade
-const MIN_FIXATION_DURATION = 100; // ms
-const LOW_RISK_THRESHOLD = 0.3;
-const MEDIUM_RISK_THRESHOLD = 0.7;
+const FIXATION_THRESHOLD = 5; // Maximum distance between points to be considered a fixation
+const SACCADE_THRESHOLD = 15; // Minimum distance to be considered a saccade
+const NORMAL_FIXATION_DURATION = 200; // Normal fixation duration in ms
+const WIGGLE_THRESHOLD = 5; // Threshold for unwanted movement
+const DEVIATION_THRESHOLD = 15; // Threshold for deviation from target
 
 /**
  * Calculate the Euclidean distance between two points
  */
-export const calculateDistance = (p1: Point, p2: Point): number => {
+export function calculateDistance(p1: Point, p2: Point): number {
   return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-};
+}
 
 /**
- * Identify fixations in eye movement data
- * Fixations are periods where the eye stays relatively still
+ * Identify fixation points where eye position doesn't change significantly
  */
-export const identifyFixations = (data: EyeMovementData[]): FixationData[] => {
-  if (data.length < 2) return [];
+export function identifyFixations(
+  eyeData: Point[],
+  timeData: number[]
+): {
+  points: Point[];
+  durations: number[];
+  startIndices: number[];
+} {
+  if (eyeData.length < 2 || eyeData.length !== timeData.length) {
+    return { points: [], durations: [], startIndices: [] };
+  }
 
-  const fixations: FixationData[] = [];
-  let currentFixation: {
-    startTime: number;
-    positions: Point[];
-    startIndex: number;
-  } | null = null;
+  const fixationPoints: Point[] = [];
+  const fixationDurations: number[] = [];
+  const startIndices: number[] = [];
 
-  for (let i = 0; i < data.length; i++) {
-    const current = data[i];
+  let currentFixationStart = 0;
+  let currentFixationPoint = eyeData[0];
 
-    if (currentFixation === null) {
-      // Start a new potential fixation
-      currentFixation = {
-        startTime: current.timestamp,
-        positions: [current.position],
-        startIndex: i,
-      };
-      continue;
-    }
+  for (let i = 1; i < eyeData.length; i++) {
+    const distance = calculateDistance(currentFixationPoint, eyeData[i]);
 
-    // Check if still in the same fixation
-    const avgPosition = currentFixation.positions.reduce(
-      (acc, pos) => ({ x: acc.x + pos.x, y: acc.y + pos.y }),
-      { x: 0, y: 0 }
-    );
-    avgPosition.x /= currentFixation.positions.length;
-    avgPosition.y /= currentFixation.positions.length;
+    if (distance > FIXATION_THRESHOLD) {
+      // End of fixation, calculate duration and add to results
+      const duration = timeData[i - 1] - timeData[currentFixationStart];
 
-    const distance = calculateDistance(avgPosition, current.position);
-
-    if (distance <= FIXATION_THRESHOLD) {
-      // Continue the current fixation
-      currentFixation.positions.push(current.position);
-    } else {
-      // End the current fixation if it meets minimum duration
-      const duration = data[i - 1].timestamp - currentFixation.startTime;
-
-      if (duration >= MIN_FIXATION_DURATION) {
-        const avgFixationPos = currentFixation.positions.reduce(
-          (acc, pos) => ({ x: acc.x + pos.x, y: acc.y + pos.y }),
-          { x: 0, y: 0 }
-        );
-        avgFixationPos.x /= currentFixation.positions.length;
-        avgFixationPos.y /= currentFixation.positions.length;
-
-        fixations.push({
-          startTime: currentFixation.startTime,
-          endTime: data[i - 1].timestamp,
-          position: avgFixationPos,
-          duration,
-        });
+      if (duration > 50) {
+        // Only count fixations longer than 50ms
+        fixationPoints.push(currentFixationPoint);
+        fixationDurations.push(duration);
+        startIndices.push(currentFixationStart);
       }
 
       // Start a new fixation
-      currentFixation = {
-        startTime: current.timestamp,
-        positions: [current.position],
-        startIndex: i,
-      };
+      currentFixationStart = i;
+      currentFixationPoint = eyeData[i];
     }
   }
 
-  // Check if the last sequence was a fixation
-  if (currentFixation && data.length > 0) {
-    const duration = data[data.length - 1].timestamp - currentFixation.startTime;
+  // Add the last fixation if it exists
+  const lastDuration = timeData[timeData.length - 1] - timeData[currentFixationStart];
+  if (lastDuration > 50) {
+    fixationPoints.push(currentFixationPoint);
+    fixationDurations.push(lastDuration);
+    startIndices.push(currentFixationStart);
+  }
 
-    if (duration >= MIN_FIXATION_DURATION) {
-      const avgFixationPos = currentFixation.positions.reduce(
-        (acc, pos) => ({ x: acc.x + pos.x, y: acc.y + pos.y }),
-        { x: 0, y: 0 }
-      );
-      avgFixationPos.x /= currentFixation.positions.length;
-      avgFixationPos.y /= currentFixation.positions.length;
+  return { points: fixationPoints, durations: fixationDurations, startIndices };
+}
 
-      fixations.push({
-        startTime: currentFixation.startTime,
-        endTime: data[data.length - 1].timestamp,
-        position: avgFixationPos,
-        duration,
-      });
+/**
+ * Identify saccades (rapid eye movements between fixations)
+ */
+export function identifySaccades(
+  eyeData: Point[],
+  timeData: number[]
+): {
+  startPoints: Point[];
+  endPoints: Point[];
+  durations: number[];
+} {
+  if (eyeData.length < 2 || eyeData.length !== timeData.length) {
+    return { startPoints: [], endPoints: [], durations: [] };
+  }
+
+  const saccadeStartPoints: Point[] = [];
+  const saccadeEndPoints: Point[] = [];
+  const saccadeDurations: number[] = [];
+
+  let inSaccade = false;
+  let saccadeStartIndex = 0;
+
+  for (let i = 1; i < eyeData.length; i++) {
+    const distance = calculateDistance(eyeData[i - 1], eyeData[i]);
+
+    if (!inSaccade && distance > SACCADE_THRESHOLD) {
+      // Start of saccade
+      inSaccade = true;
+      saccadeStartIndex = i - 1;
+    } else if (inSaccade && distance < SACCADE_THRESHOLD) {
+      // End of saccade
+      inSaccade = false;
+
+      const duration = timeData[i] - timeData[saccadeStartIndex];
+      saccadeStartPoints.push(eyeData[saccadeStartIndex]);
+      saccadeEndPoints.push(eyeData[i]);
+      saccadeDurations.push(duration);
     }
   }
 
-  return fixations;
-};
-
-/**
- * Identify saccades in eye movement data
- * Saccades are rapid eye movements between fixations
- */
-export const identifySaccades = (
-  data: EyeMovementData[],
-  fixations: FixationData[]
-): SaccadeData[] => {
-  if (fixations.length < 2) return [];
-
-  const saccades: SaccadeData[] = [];
-
-  for (let i = 0; i < fixations.length - 1; i++) {
-    const startTime = fixations[i].endTime;
-    const endTime = fixations[i + 1].startTime;
-    const startPosition = fixations[i].position;
-    const endPosition = fixations[i + 1].position;
-    const duration = endTime - startTime;
-    const distance = calculateDistance(startPosition, endPosition);
-
-    if (distance >= SACCADE_THRESHOLD) {
-      saccades.push({
-        startTime,
-        endTime,
-        startPosition,
-        endPosition,
-        duration,
-        velocity: distance / duration, // pixels per ms
-      });
-    }
+  // If we end while still in a saccade
+  if (inSaccade) {
+    const duration = timeData[timeData.length - 1] - timeData[saccadeStartIndex];
+    saccadeStartPoints.push(eyeData[saccadeStartIndex]);
+    saccadeEndPoints.push(eyeData[eyeData.length - 1]);
+    saccadeDurations.push(duration);
   }
 
-  return saccades;
-};
+  return {
+    startPoints: saccadeStartPoints,
+    endPoints: saccadeEndPoints,
+    durations: saccadeDurations,
+  };
+}
 
 /**
- * Calculate the saccade frequency (saccades per second)
+ * Calculate saccade frequency (saccades per second)
  */
-export const calculateSaccadeFrequency = (
-  saccades: SaccadeData[],
-  totalDuration: number
-): number => {
-  const durationInSeconds = totalDuration / 1000;
-  return saccades.length / durationInSeconds;
-};
+export function calculateSaccadeFrequency(saccadeCount: number, totalDuration: number): number {
+  if (totalDuration <= 0) return 0;
+  return (saccadeCount * 1000) / totalDuration; // Convert ms to seconds
+}
 
 /**
- * Calculate the average fixation duration
+ * Calculate average fixation duration
  */
-export const calculateAverageFixationDuration = (fixations: FixationData[]): number => {
-  if (fixations.length === 0) return 0;
+export function calculateAverageFixationDuration(fixationDurations: number[]): number {
+  if (fixationDurations.length === 0) return 0;
 
-  const totalDuration = fixations.reduce((sum, fixation) => sum + fixation.duration, 0);
-  return totalDuration / fixations.length;
-};
+  const totalDuration = fixationDurations.reduce((sum, duration) => sum + duration, 0);
+  return totalDuration / fixationDurations.length;
+}
 
 /**
- * Calculate a "wiggle score" that measures unwanted movements
- * For example, during horizontal movement, checks for y-axis variations
+ * Calculate a "wiggle" score based on unwanted vertical/horizontal movements
+ * when the target is moving horizontally/vertically
  */
-export const calculateWiggleScore = (data: EyeMovementData[]): number => {
-  if (data.length < 3) return 0;
+export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): number {
+  if (eyeData.length === 0 || targetData.length === 0) return 0;
 
   let totalWiggle = 0;
+  let wigglePoints = 0;
 
-  for (let i = 2; i < data.length; i++) {
-    const prev2 = data[i - 2];
-    const prev1 = data[i - 1];
-    const current = data[i];
+  // Interpolate target data to match eye data length if needed
+  const interpolatedTargets: Point[] = [];
+  if (targetData.length !== eyeData.length) {
+    for (let i = 0; i < eyeData.length; i++) {
+      const targetIndex = Math.floor((i / eyeData.length) * targetData.length);
+      interpolatedTargets[i] = targetData[targetIndex];
+    }
+  } else {
+    interpolatedTargets.push(...targetData);
+  }
 
-    // Determine the primary direction of movement
-    const xChange1 = Math.abs(prev1.targetPosition.x - prev2.targetPosition.x);
-    const yChange1 = Math.abs(prev1.targetPosition.y - prev2.targetPosition.y);
-    const xChange2 = Math.abs(current.targetPosition.x - prev1.targetPosition.x);
-    const yChange2 = Math.abs(current.targetPosition.y - prev1.targetPosition.y);
+  for (let i = 1; i < eyeData.length; i++) {
+    const prevTarget = interpolatedTargets[i - 1];
+    const currentTarget = interpolatedTargets[i];
 
-    // Check if movement is primarily horizontal or vertical
-    const isHorizontalTarget = xChange1 + xChange2 > yChange1 + yChange2;
+    const targetDX = Math.abs(currentTarget.x - prevTarget.x);
+    const targetDY = Math.abs(currentTarget.y - prevTarget.y);
 
-    // Calculate wiggle based on the opposite axis of the target movement
-    if (isHorizontalTarget) {
-      // For horizontal target movement, check vertical eye movements
-      const expectedY = prev1.position.y; // Expected to stay relatively constant
-      const actualY = current.position.y;
-      totalWiggle += Math.abs(actualY - expectedY);
-    } else {
-      // For vertical target movement, check horizontal eye movements
-      const expectedX = prev1.position.x; // Expected to stay relatively constant
-      const actualX = current.position.x;
-      totalWiggle += Math.abs(actualX - expectedX);
+    const eyeDX = Math.abs(eyeData[i].x - eyeData[i - 1].x);
+    const eyeDY = Math.abs(eyeData[i].y - eyeData[i - 1].y);
+
+    // If target moving horizontally, check for unwanted vertical eye movement
+    if (targetDX > targetDY) {
+      if (eyeDY > WIGGLE_THRESHOLD) {
+        totalWiggle += eyeDY;
+        wigglePoints++;
+      }
+    }
+    // If target moving vertically, check for unwanted horizontal eye movement
+    else if (targetDY > targetDX) {
+      if (eyeDX > WIGGLE_THRESHOLD) {
+        totalWiggle += eyeDX;
+        wigglePoints++;
+      }
     }
   }
 
-  // Normalize by the number of measurements
-  return totalWiggle / (data.length - 2);
-};
+  return wigglePoints > 0 ? totalWiggle / wigglePoints : 0;
+}
 
 /**
- * Calculate how well the eye follows the target (deviation score)
+ * Calculate deviation score (how much the eye position deviates from the target)
  */
-export const calculateDeviationScore = (data: EyeMovementData[]): number => {
-  if (data.length === 0) return 0;
+export function calculateDeviationScore(eyeData: Point[], targetData: Point[]): number {
+  if (eyeData.length === 0 || targetData.length === 0) return 0;
+
+  // Interpolate target data to match eye data length if needed
+  const interpolatedTargets: Point[] = [];
+  if (targetData.length !== eyeData.length) {
+    for (let i = 0; i < eyeData.length; i++) {
+      const targetIndex = Math.floor((i / eyeData.length) * targetData.length);
+      interpolatedTargets[i] = targetData[targetIndex];
+    }
+  } else {
+    interpolatedTargets.push(...targetData);
+  }
 
   let totalDeviation = 0;
 
-  data.forEach((point) => {
-    const distance = calculateDistance(point.position, point.targetPosition);
+  for (let i = 0; i < eyeData.length; i++) {
+    const distance = calculateDistance(eyeData[i], interpolatedTargets[i]);
     totalDeviation += distance;
-  });
+  }
 
-  return totalDeviation / data.length;
-};
+  return totalDeviation / eyeData.length;
+}
 
 /**
- * Determine risk assessment based on analysis metrics
+ * Determine risk assessment based on various metrics
  */
-export const determineRiskAssessment = (
-  wiggleScore: number,
-  deviationScore: number,
+export function determineRiskAssessment(
   saccadeFrequency: number,
-  averageFixationDuration: number
-): 'Low Risk' | 'Medium Risk' | 'High Risk' => {
-  // Normalize all factors to 0-1 scale
-  const normalizedWiggle = Math.min(wiggleScore / 100, 1);
-  const normalizedDeviation = Math.min(deviationScore / 200, 1);
-  const normalizedSaccadeFreq = Math.min(Math.max(2 - saccadeFrequency, 0), 1);
-  const normalizedFixationDuration = Math.min(Math.max(500 - averageFixationDuration, 0) / 500, 1);
+  avgFixationDuration: number,
+  wiggleScore: number,
+  deviationScore: number
+): string {
+  // Create a scoring system (0-100) where higher scores indicate more risk
+  let riskScore = 0;
 
-  // Calculate overall risk score
-  const riskScore =
-    normalizedWiggle * 0.4 +
-    normalizedDeviation * 0.3 +
-    normalizedSaccadeFreq * 0.15 +
-    normalizedFixationDuration * 0.15;
-
-  // Determine risk category
-  if (riskScore < LOW_RISK_THRESHOLD) {
-    return 'Low Risk';
-  } else if (riskScore < MEDIUM_RISK_THRESHOLD) {
-    return 'Medium Risk';
-  } else {
-    return 'High Risk';
+  // Abnormal saccade frequency (too high or too low)
+  if (saccadeFrequency < 1) {
+    riskScore += 25; // Too few saccades
+  } else if (saccadeFrequency > 5) {
+    riskScore += 25; // Too many saccades
   }
-};
+
+  // Abnormal fixation duration
+  if (avgFixationDuration < 100) {
+    riskScore += 20; // Too short fixations
+  } else if (avgFixationDuration > 500) {
+    riskScore += 20; // Too long fixations
+  }
+
+  // Wiggle score (unwanted movements)
+  if (wiggleScore > 10) {
+    riskScore += 20;
+  } else if (wiggleScore > 5) {
+    riskScore += 10;
+  }
+
+  // Deviation score (not following target)
+  if (deviationScore > 30) {
+    riskScore += 30;
+  } else if (deviationScore > 15) {
+    riskScore += 15;
+  }
+
+  // Convert score to risk assessment
+  if (riskScore >= 70) {
+    return 'High Risk';
+  } else if (riskScore >= 40) {
+    return 'Medium Risk';
+  } else if (riskScore >= 20) {
+    return 'Low Risk';
+  } else {
+    return 'No Risk Detected';
+  }
+}
 
 /**
- * Main function to analyze eye movement data
+ * Calculate fixation on face percentage
  */
-export const analyzeEyeMovementData = (data: EyeMovementData[]): AnalysisResult => {
-  if (data.length === 0) {
-    return {
-      fixations: [],
-      saccades: [],
-      averageFixationDuration: 0,
-      saccadeFrequency: 0,
-      wiggleScore: 0,
-      deviationScore: 0,
-      riskAssessment: 'Low Risk',
-    };
+export function calculateFixationPercentage(eyeData: Point[], targetData: Point[]): number {
+  if (eyeData.length === 0 || targetData.length === 0) return 0;
+
+  // Interpolate target data to match eye data length if needed
+  const interpolatedTargets: Point[] = [];
+  if (targetData.length !== eyeData.length) {
+    for (let i = 0; i < eyeData.length; i++) {
+      const targetIndex = Math.floor((i / eyeData.length) * targetData.length);
+      interpolatedTargets[i] = targetData[targetIndex];
+    }
+  } else {
+    interpolatedTargets.push(...targetData);
   }
 
-  const totalDuration = data[data.length - 1].timestamp - data[0].timestamp;
-  const fixations = identifyFixations(data);
-  const saccades = identifySaccades(data, fixations);
-  const averageFixationDuration = calculateAverageFixationDuration(fixations);
-  const saccadeFrequency = calculateSaccadeFrequency(saccades, totalDuration);
-  const wiggleScore = calculateWiggleScore(data);
-  const deviationScore = calculateDeviationScore(data);
+  let onTargetCount = 0;
+
+  for (let i = 0; i < eyeData.length; i++) {
+    const distance = calculateDistance(eyeData[i], interpolatedTargets[i]);
+    if (distance < DEVIATION_THRESHOLD) {
+      onTargetCount++;
+    }
+  }
+
+  return (onTargetCount / eyeData.length) * 100;
+}
+
+/**
+ * Analyze eye movement data to produce analysis results
+ */
+export function analyzeEyeMovementData(
+  eyePositions: Point[],
+  targetPositions: Point[],
+  timestamps: number[]
+): AnalysisResult {
+  if (eyePositions.length < 2 || timestamps.length < 2) {
+    throw new Error('Insufficient data for analysis');
+  }
+
+  // Process and extract metrics
+  const { durations: fixationDurations } = identifyFixations(eyePositions, timestamps);
+  const { durations: saccadeDurations } = identifySaccades(eyePositions, timestamps);
+
+  const totalDuration = timestamps[timestamps.length - 1] - timestamps[0];
+  const saccadeFrequency = calculateSaccadeFrequency(saccadeDurations.length, totalDuration);
+  const avgFixationDuration = calculateAverageFixationDuration(fixationDurations);
+  const wiggleScore = calculateWiggleScore(eyePositions, targetPositions);
+  const deviationScore = calculateDeviationScore(eyePositions, targetPositions);
+  const fixationPercentage = calculateFixationPercentage(eyePositions, targetPositions);
 
   const riskAssessment = determineRiskAssessment(
-    wiggleScore,
-    deviationScore,
     saccadeFrequency,
-    averageFixationDuration
-  );
+    avgFixationDuration,
+    wiggleScore,
+    deviationScore
+  ) as string;
 
   return {
-    fixations,
-    saccades,
-    averageFixationDuration,
     saccadeFrequency,
+    averageFixationDuration: avgFixationDuration,
     wiggleScore,
     deviationScore,
     riskAssessment,
+    testDate: new Date(),
+    fixationPercentage,
   };
-};
+}

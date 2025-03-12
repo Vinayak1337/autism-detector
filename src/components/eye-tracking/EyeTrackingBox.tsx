@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // Types for the eye tracking component
 export interface Point {
@@ -34,84 +34,87 @@ export const EyeTrackingBox: React.FC<EyeTrackingBoxProps> = ({
   const animationRef = useRef<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Calculate position based on pattern and progress
-  const calculatePosition = (progress: number): Point => {
-    let newX = 0;
-    let newY = 0;
+  // Calculate position based on pattern and progress - wrapped in useCallback
+  const calculatePosition = useCallback(
+    (progress: number): Point => {
+      let newX = 0;
+      let newY = 0;
 
-    switch (pattern) {
-      case 'square':
-        // Square pattern: left → down → right → up → left
-        const segment = Math.floor(progress * 4); // 0, 1, 2, or 3
-        const segmentProgress = (progress * 4) % 1; // Progress within segment (0 to 1)
+      switch (pattern) {
+        case 'square':
+          // Square pattern: left → down → right → up → left
+          const segment = Math.floor(progress * 4); // 0, 1, 2, or 3
+          const segmentProgress = (progress * 4) % 1; // Progress within segment (0 to 1)
 
-        switch (segment) {
-          case 0: // Left to bottom
-            newX = 0;
-            newY = segmentProgress * size;
-            break;
-          case 1: // Bottom to right
-            newX = segmentProgress * size;
-            newY = size;
-            break;
-          case 2: // Right to top
-            newX = size;
-            newY = size - segmentProgress * size;
-            break;
-          case 3: // Top to left
-            newX = size - segmentProgress * size;
-            newY = 0;
-            break;
-        }
-        break;
+          switch (segment) {
+            case 0: // Left to bottom
+              newX = 0;
+              newY = segmentProgress * size;
+              break;
+            case 1: // Bottom to right
+              newX = segmentProgress * size;
+              newY = size;
+              break;
+            case 2: // Right to top
+              newX = size;
+              newY = size - segmentProgress * size;
+              break;
+            case 3: // Top to left
+              newX = size - segmentProgress * size;
+              newY = 0;
+              break;
+          }
+          break;
 
-      case 'circle':
-        // Circle pattern using sine and cosine
-        const angle = progress * 2 * Math.PI;
-        const radius = size / 2 - ballSize / 2;
-        newX = size / 2 + radius * Math.cos(angle);
-        newY = size / 2 + radius * Math.sin(angle);
-        break;
+        case 'circle':
+          // Circle pattern using sine and cosine
+          const angle = progress * 2 * Math.PI;
+          const radius = size / 2 - ballSize / 2;
+          newX = size / 2 + radius * Math.cos(angle);
+          newY = size / 2 + radius * Math.sin(angle);
+          break;
 
-      case 'horizontal':
-        // Left to right and back
-        const doubleProgress = progress * 2;
-        if (doubleProgress <= 1) {
-          newX = doubleProgress * size;
-        } else {
-          newX = (2 - doubleProgress) * size;
-        }
-        newY = size / 2;
-        break;
+        case 'horizontal':
+          // Left to right and back
+          const doubleProgress = progress * 2;
+          if (doubleProgress <= 1) {
+            newX = doubleProgress * size;
+          } else {
+            newX = (2 - doubleProgress) * size;
+          }
+          newY = size / 2;
+          break;
 
-      case 'vertical':
-        // Top to bottom and back
-        const doubleProgressV = progress * 2;
-        if (doubleProgressV <= 1) {
-          newY = doubleProgressV * size;
-        } else {
-          newY = (2 - doubleProgressV) * size;
-        }
-        newX = size / 2;
-        break;
+        case 'vertical':
+          // Top to bottom and back
+          const doubleProgressV = progress * 2;
+          if (doubleProgressV <= 1) {
+            newY = doubleProgressV * size;
+          } else {
+            newY = (2 - doubleProgressV) * size;
+          }
+          newX = size / 2;
+          break;
 
-      case 'random':
-        // Generate some semi-random but smooth movement
-        // Using parametric equations with multiple sine waves for more unpredictable movement
-        const t = progress * 10; // Scale time for more variations
-        newX = (0.5 + 0.4 * Math.sin(t) * Math.cos(2.3 * t)) * size;
-        newY = (0.5 + 0.4 * Math.sin(1.5 * t) * Math.cos(0.8 * t)) * size;
-        break;
-    }
+        case 'random':
+          // Generate some semi-random but smooth movement
+          // Using parametric equations with multiple sine waves for more unpredictable movement
+          const t = progress * 10; // Scale time for more variations
+          newX = (0.5 + 0.4 * Math.sin(t) * Math.cos(2.3 * t)) * size;
+          newY = (0.5 + 0.4 * Math.sin(1.5 * t) * Math.cos(0.8 * t)) * size;
+          break;
+      }
 
-    return { x: newX, y: newY };
-  };
+      return { x: newX, y: newY };
+    },
+    [pattern, size, ballSize]
+  );
 
   // Animation loop
   useEffect(() => {
     if (!isRunning) return;
 
-    let startTime = Date.now();
+    const startTime = Date.now();
     const durationMs = duration * 1000;
 
     const animate = () => {
@@ -152,7 +155,7 @@ export const EyeTrackingBox: React.FC<EyeTrackingBoxProps> = ({
         animationRef.current = null;
       }
     };
-  }, [isRunning, duration, pattern, size, onComplete, onPositionChange, remainingTime]);
+  }, [isRunning, duration, calculatePosition, onComplete, onPositionChange, remainingTime]);
 
   // Pause and resume functionality
   const pause = () => {

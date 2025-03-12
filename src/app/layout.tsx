@@ -25,6 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>{/* TensorFlow.js will be loaded directly through npm package */}</head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ClerkProvider>{children}</ClerkProvider>
       </body>
