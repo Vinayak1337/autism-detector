@@ -7,11 +7,11 @@ import {
   Point,
   analyzeEyeMovementData,
   useEyeTrackingStore,
+  AnalysisResult,
 } from '@/features/eyeTracking';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2 } from 'lucide-react';
-import Image from 'next/image';
 import { Progress } from '@/components/ui/progress';
 
 const EyeTrackingTestClient = () => {
@@ -26,12 +26,14 @@ const EyeTrackingTestClient = () => {
     resetTestState,
   } = useEyeTrackingStore();
 
-  const [result, setResult] = useState<any>(null);
+  // Replace any with AnalysisResult
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [progress, setProgress] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const testDuration = 15; // seconds
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const gazePointsRef = useRef<Point[]>([]);
+  const targetPositionsRef = useRef<Point[]>([]); // To store target positions
 
   // Handle start test button click
   const handleStartTest = () => {
@@ -81,13 +83,24 @@ const EyeTrackingTestClient = () => {
   // End the test and analyze results
   const endTest = () => {
     setTestPhase('results');
-    // Convert Point[] to EyeMovementData[]
-    const eyeMovementData = gazePointsRef.current.map((point, index) => ({
-      timestamp: Date.now() - (gazePointsRef.current.length - index) * 100, // Approximate timestamps
-      position: point,
-      targetPosition: point, // Using same point as target for simplicity
-    }));
-    const analysisResult = analyzeEyeMovementData(eyeMovementData);
+
+    // Generate timestamps (one for each data point)
+    const timestamps = Array.from(
+      { length: gazePointsRef.current.length },
+      (_, i) => Date.now() - (gazePointsRef.current.length - i) * 100
+    );
+
+    // Use target positions if available, or use eye positions as fallback
+    const targetPositions =
+      targetPositionsRef.current.length > 0 ? targetPositionsRef.current : gazePointsRef.current;
+
+    // Call analyzeEyeMovementData with all required parameters
+    const analysisResult = analyzeEyeMovementData(
+      gazePointsRef.current, // eye positions
+      targetPositions, // target positions
+      timestamps // timestamps
+    );
+
     setResult(analysisResult);
   };
 
@@ -179,11 +192,11 @@ const EyeTrackingTestClient = () => {
                 {eyeDetected && (
                   <div className="text-center mb-4">
                     <p className="text-green-600 font-medium mb-2">
-                      Face detected! You're ready to start the test.
+                      Face detected! You&apos;re ready to start the test.
                     </p>
                     <p className="text-gray-600 mb-4">
-                      When you click "Start Test", a ball will appear and move in a pattern. Try to
-                      follow it with your eyes while keeping your head still.
+                      When you click &quot;Start Test&quot;, a ball will appear and move in a
+                      pattern. Try to follow it with your eyes while keeping your head still.
                     </p>
                     <Button onClick={handleStartTest} size="lg" className="mt-2">
                       Start Test
@@ -213,7 +226,14 @@ const EyeTrackingTestClient = () => {
                     onEyeDetected={setEyeDetected}
                   />
                   <div className="absolute inset-0">
-                    <AnimatedBall size={300} ballSize={20} duration={15} />
+                    <AnimatedBall
+                      size={20}
+                      onPositionUpdate={(pos) => {
+                        // Store the target position for later analysis
+                        targetPositionsRef.current.push(pos);
+                      }}
+                      showPath={true}
+                    />
                   </div>
                 </div>
 

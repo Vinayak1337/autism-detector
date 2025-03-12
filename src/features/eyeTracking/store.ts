@@ -48,6 +48,7 @@ export interface EyeTrackingState {
   endTest: () => void;
   setAnalysisResults: (results: AnalysisResult) => void;
   resetTest: () => void;
+  resetTestState: () => void;
 }
 
 export const useEyeTrackingStore = create<EyeTrackingState>()(
@@ -107,6 +108,16 @@ export const useEyeTrackingStore = create<EyeTrackingState>()(
           testEndTime: null,
           gazeData: [],
           analysisResults: null,
+        }),
+      
+      resetTestState: () => 
+        set({
+          testPhase: 'ready',
+          testStartTime: null,
+          testEndTime: null,
+          gazeData: [],
+          analysisResults: null,
+          eyeDetected: false,
         }),
     }),
     {
