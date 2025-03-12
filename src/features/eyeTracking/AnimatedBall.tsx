@@ -88,9 +88,17 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
     const progress = Math.min(elapsedTime / MOVEMENT_DURATION, 1);
     progressRef.current = progress;
 
-    // Update progress state for UI less frequently
-    if (Math.floor(progress * 100) !== Math.floor(progressForUI * 100)) {
-      setProgressForUI(progress);
+    // Update progress state for UI less frequently - throttle to only update if significant change
+    // Using a ref to track last update time to prevent infinite loop
+    const lastProgressUpdate = progressRef.current;
+    if (
+      Math.floor(progress * 100) !== Math.floor(progressForUI * 100) &&
+      lastProgressUpdate !== progress
+    ) {
+      // Use setTimeout to break the synchronous execution cycle
+      requestAnimationFrame(() => {
+        setProgressForUI(progress);
+      });
     }
 
     if (progress >= 1) {

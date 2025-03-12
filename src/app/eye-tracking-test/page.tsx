@@ -40,13 +40,15 @@ const EyeTrackingTestPage: React.FC = () => {
 
   // Update stats when gaze data changes
   useEffect(() => {
-    if (gazeData.length > 0) {
-      const lastPoint = gazeData[gazeData.length - 1];
+    // Only update stats if we have data and are in testing phase
+    if (testPhase === 'testing') {
       let accuracy = 0;
       let coverage = 0;
+      let lastPoint = { x: 0, y: 0 };
 
-      // Calculate accuracy if we have both gaze and target data
-      if (targetPositions.length > 0) {
+      if (gazeData.length > 0 && targetPositions.length > 0) {
+        lastPoint = gazeData[gazeData.length - 1];
+
         // Simple distance-based accuracy calculation
         const targetPoint = targetPositions[targetPositions.length - 1];
         const distance = Math.sqrt(
@@ -58,15 +60,28 @@ const EyeTrackingTestPage: React.FC = () => {
         coverage = Math.min(100, (gazeData.length / 300) * 100);
       }
 
-      setEyeStats({
-        eyesDetected: eyeDetected,
-        gazePointsCollected: gazeData.length,
-        accuracy,
-        coverage,
-        lastPosition: lastPoint,
-      });
+      // Compare with previous stats to prevent unnecessary updates
+      if (
+        eyeStats.eyesDetected !== eyeDetected ||
+        eyeStats.gazePointsCollected !== gazeData.length ||
+        Math.abs(eyeStats.accuracy - accuracy) > 1 ||
+        Math.abs(eyeStats.coverage - coverage) > 1 ||
+        eyeStats.lastPosition.x !== lastPoint.x ||
+        eyeStats.lastPosition.y !== lastPoint.y
+      ) {
+        // Use requestAnimationFrame to break the synchronous update cycle
+        requestAnimationFrame(() => {
+          setEyeStats({
+            eyesDetected: eyeDetected,
+            gazePointsCollected: gazeData.length,
+            accuracy,
+            coverage,
+            lastPosition: lastPoint,
+          });
+        });
+      }
     }
-  }, [gazeData, targetPositions, eyeDetected]);
+  }, [gazeData.length, eyeDetected, testPhase, targetPositions.length, eyeStats]);
 
   // Auto-scroll to animation box when test starts
   useEffect(() => {
@@ -104,14 +119,17 @@ const EyeTrackingTestPage: React.FC = () => {
         // Update store with results
         setAnalysisResults(results);
 
-        // Navigate to results page
-        router.push('/eye-tracking-results');
+        // Set test phase to results instead of navigating away
+        setTestPhase('results');
       } catch (error) {
         console.error('Error analyzing eye movement data:', error);
+        // Still show results screen even if analysis fails
+        setTestPhase('results');
       }
     } else {
       console.warn('Not enough data to analyze');
-      router.push('/eye-tracking-results');
+      // Show results screen anyway
+      setTestPhase('results');
     }
   };
 

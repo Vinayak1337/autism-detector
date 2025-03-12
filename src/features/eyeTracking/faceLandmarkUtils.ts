@@ -43,7 +43,7 @@ async function ensureTensorFlowLoaded() {
 
     // Attach TensorFlow to window object
     if (typeof window !== 'undefined') {
-      // @ts-ignore - Attaching to window for debugging
+      // @ts-expect-error - Attaching to window for debugging
       window.tf = tf;
       console.log('Attached TensorFlow.js to window object');
     }

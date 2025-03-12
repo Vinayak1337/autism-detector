@@ -275,23 +275,24 @@ describe('EyeTrackingTestPage', () => {
     expect(screen.getByTestId('mock-ball-position')).toBeInTheDocument();
   });
 
-  it('navigates to results page when test completes', async () => {
-    const user = userEvent.setup();
-    const { useEyeTrackingStore } = require('@/features/eyeTracking/store');
-    const mockStore = useEyeTrackingStore();
-    const router = useRouter();
+  it('navigates to results phase when test completes', () => {
+    const { getByText, getByTestId } = render(<EyeTrackingTestPage />);
 
-    // Set the phase to testing and add some data
-    mockStore.testPhase = 'testing';
-    mockStore.gazeData = Array(20).fill({ x: 0.5, y: 0.5 });
+    // Go through the test flow
+    fireEvent.click(getByText('Get Started'));
 
-    render(<EyeTrackingTestPage />);
+    // Mock eye detection
+    mockEyeDetected(true);
+
+    // Start the test
+    fireEvent.click(getByText('Start Test'));
 
     // Simulate test completion
-    await user.click(screen.getByTestId('simulate-complete'));
+    const completeButton = getByTestId('complete-test-button');
+    fireEvent.click(completeButton);
 
-    // Verify router.push was called
-    expect(router.push).toHaveBeenCalledWith('/eye-tracking-results');
+    // Verify test phase was changed to results
+    expect(mockUseEyeTrackingStore().setTestPhase).toHaveBeenCalledWith('results');
   });
 
   it('shows processing message in results phase', () => {
