@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEyeTrackingStore } from './store';
 
 // Point interface for positions
@@ -31,7 +31,7 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   showLabels = true,
 }) => {
   const testPhase = useEyeTrackingStore((state) => state.testPhase);
-  const setTestPhase = useEyeTrackingStore((state) => state.setTestPhase);
+  //const setTestPhase = useEyeTrackingStore((state) => state.setTestPhase);
   const endTest = useEyeTrackingStore((state) => state.endTest);
 
   const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
@@ -70,7 +70,7 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   };
 
   // Animation function
-  const animate = (timestamp: number) => {
+  const animate = useCallback((timestamp: number) => {
     // Guard against infinite recursion in test environment
     if (process.env.NODE_ENV === 'test' && lastFrameTimeRef.current === timestamp) {
       return;
@@ -154,7 +154,7 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
     if (process.env.NODE_ENV !== 'test' || !requestRef.current) {
       requestRef.current = requestAnimationFrame(animate);
     }
-  };
+  }, [endTest, onComplete, onPositionUpdate, progressForUI]);
 
   // Start animation when in testing phase
   useEffect(() => {
@@ -175,7 +175,7 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
         requestRef.current = null;
       }
     };
-  }, [testPhase]);
+  }, [testPhase, animate]);
 
   // Return early if not in testing phase
   if (testPhase !== 'testing') {

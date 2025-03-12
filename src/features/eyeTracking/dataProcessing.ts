@@ -4,7 +4,7 @@ import { Point } from './AnimatedBall';
 
 // Types for eye tracking data analysis
 export interface EyeMovementData {
-  eyePosition: Point;
+  position: Point;
   targetPosition: Point;
   timestamp: number;
 }
@@ -39,7 +39,7 @@ export interface AnalysisResult {
 // Constants for analysis
 const FIXATION_THRESHOLD = 5; // Maximum distance between points to be considered a fixation
 const SACCADE_THRESHOLD = 15; // Minimum distance to be considered a saccade
-const NORMAL_FIXATION_DURATION = 200; // Normal fixation duration in ms
+// const NORMAL_FIXATION_DURATION = 200; // Normal fixation duration in ms
 const WIGGLE_THRESHOLD = 5; // Threshold for unwanted movement
 const DEVIATION_THRESHOLD = 15; // Threshold for deviation from target
 

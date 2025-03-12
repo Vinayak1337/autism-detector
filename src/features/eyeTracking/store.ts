@@ -53,7 +53,7 @@ export interface EyeTrackingState {
 
 export const useEyeTrackingStore = create<EyeTrackingState>()(
   devtools(
-    (set, get) => ({
+    (set) => ({
       // Camera and model status
       isModelLoading: true,
       isCameraReady: false,
@@ -94,7 +94,7 @@ export const useEyeTrackingStore = create<EyeTrackingState>()(
         }),
 
       endTest: () =>
-        set((state) => ({
+        set(() => ({
           testPhase: 'results',
           testEndTime: new Date(),
         })),

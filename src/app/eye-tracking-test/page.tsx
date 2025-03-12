@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+//import { useRouter } from 'next/navigation';
 import { EyeTrackingComponent } from '@/features/eyeTracking/EyeTrackingComponent';
 import { AnimatedBall, Point } from '@/features/eyeTracking/AnimatedBall';
 import { useEyeTrackingStore, TestPhase } from '@/features/eyeTracking/store';
 import { analyzeEyeMovementData } from '@/features/eyeTracking/dataProcessing';
 
 const EyeTrackingTestPage: React.FC = () => {
-  const router = useRouter();
+ // const router = useRouter();
 
   // Access the global eye tracking store
   const {
@@ -81,7 +81,7 @@ const EyeTrackingTestPage: React.FC = () => {
         });
       }
     }
-  }, [gazeData.length, eyeDetected, testPhase, targetPositions.length, eyeStats]);
+  }, [gazeData.length, eyeDetected, testPhase, targetPositions.length, eyeStats, gazeData, targetPositions]);
 
   // Auto-scroll to animation box when test starts
   useEffect(() => {
@@ -176,7 +176,7 @@ const EyeTrackingTestPage: React.FC = () => {
               <EyeTrackingComponent
                 width="100%"
                 height="100%"
-                testPhase={phase as any}
+                testPhase={phase as 'intro' | 'ready' | 'testing' | 'results'}
                 onEyeDetected={(detected) => {
                   if (detected && isCameraReady) {
                     setTestPhase('ready' as TestPhase);
@@ -223,7 +223,7 @@ const EyeTrackingTestPage: React.FC = () => {
               {!isCameraReady && (
                 <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-blue-800 text-sm">
-                    Waiting for camera access. If you've already allowed access but still see this
+                    Waiting for camera access. If you&apos;ve already allowed access but still see this
                     message, try refreshing the page.
                   </p>
                 </div>
@@ -279,7 +279,7 @@ const EyeTrackingTestPage: React.FC = () => {
               <EyeTrackingComponent
                 width="100%"
                 height="100%"
-                testPhase={phase as any}
+                testPhase={phase as 'intro' | 'ready' | 'testing' | 'results'}
                 onGazeData={handleGazeData}
               />
             </div>
