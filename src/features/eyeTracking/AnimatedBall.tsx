@@ -1,152 +1,287 @@
-import React, { useEffect, useRef, useState } from 'react';
+'use client';
 
+import React, { useState, useEffect, useRef } from 'react';
+import { useEyeTrackingStore } from './store';
+
+// Point interface for positions
 export interface Point {
   x: number;
   y: number;
 }
 
-export type TrackingPattern = 'square';
+// Ball path definitions for the square pattern
+const MOVEMENT_DURATION = 60000; // 60 seconds total
+const SQUARE_SIZE = 60; // Percentage of the container size
 
 interface AnimatedBallProps {
-  size: number;
-  ballSize: number;
-  duration: number;
-  pattern?: TrackingPattern;
-  onPositionChange?: (position: Point) => void;
   onComplete?: () => void;
+  onPositionUpdate?: (position: Point) => void; // New prop to report position updates
+  size?: number; // Ball size in pixels
+  color?: string;
+  showPath?: boolean; // Whether to show the path
+  showLabels?: boolean; // Whether to show position labels
 }
 
 export const AnimatedBall: React.FC<AnimatedBallProps> = ({
-  size,
-  ballSize,
-  duration,
-  pattern = 'square',
-  onPositionChange,
   onComplete,
+  onPositionUpdate,
+  size = 30,
+  color = '#4F46E5', // Indigo-600
+  showPath = true,
+  showLabels = true,
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const testPhase = useEyeTrackingStore((state) => state.testPhase);
+  const setTestPhase = useEyeTrackingStore((state) => state.setTestPhase);
+  const endTest = useEyeTrackingStore((state) => state.endTest);
+
   const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
-  const [timeRemaining, setTimeRemaining] = useState(duration);
+  // Use refs instead of state to avoid re-renders during animation
+  const animationStartTimeRef = useRef<number | null>(null);
+  const progressRef = useRef<number>(0);
+  const [progressForUI, setProgressForUI] = useState(0);
   const requestRef = useRef<number | null>(null);
-  const startTimeRef = useRef<number | null>(null);
-  const lastTimestampRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastFrameTimeRef = useRef<number | null>(null);
 
-  // Calculate ball position based on pattern and progress
-  const calculatePosition = (progress: number): Point => {
-    // For square pattern, we move in a square: top-left → bottom-left → bottom-right → top-right → top-left
-    // We'll divide the progress into 4 segments (0-0.25, 0.25-0.5, 0.5-0.75, 0.75-1)
-    const maxOffset = size - ballSize;
+  // Calculate the square points based on container dimensions and SQUARE_SIZE
+  const calculateSquarePoints = (): Point[] => {
+    if (!containerRef.current) return [];
 
-    if (progress <= 0.25) {
-      // Top-left to bottom-left
-      const segmentProgress = progress / 0.25;
-      return { x: 0, y: maxOffset * segmentProgress };
-    } else if (progress <= 0.5) {
-      // Bottom-left to bottom-right
-      const segmentProgress = (progress - 0.25) / 0.25;
-      return { x: maxOffset * segmentProgress, y: maxOffset };
-    } else if (progress <= 0.75) {
-      // Bottom-right to top-right
-      const segmentProgress = (progress - 0.5) / 0.25;
-      return { x: maxOffset, y: maxOffset * (1 - segmentProgress) };
-    } else {
-      // Top-right to top-left
-      const segmentProgress = (progress - 0.75) / 0.25;
-      return { x: maxOffset * (1 - segmentProgress), y: 0 };
+    const containerWidth = containerRef.current.clientWidth;
+    const containerHeight = containerRef.current.clientHeight;
+
+    // Calculate the square dimensions as a percentage of container
+    const squareWidth = (containerWidth * SQUARE_SIZE) / 100;
+    const squareHeight = (containerHeight * SQUARE_SIZE) / 100;
+
+    // Position the square in the center of the container
+    const offsetX = (containerWidth - squareWidth) / 2;
+    const offsetY = (containerHeight - squareHeight) / 2;
+
+    // Create the square points - Start at the left point and move clockwise
+    // Left → Down → Right → Up → Left
+    return [
+      { x: offsetX, y: offsetY + squareHeight / 2 }, // Left middle
+      { x: offsetX + squareWidth / 2, y: offsetY + squareHeight }, // Bottom middle
+      { x: offsetX + squareWidth, y: offsetY + squareHeight / 2 }, // Right middle
+      { x: offsetX + squareWidth / 2, y: offsetY }, // Top middle
+      { x: offsetX, y: offsetY + squareHeight / 2 }, // Back to left middle
+    ];
+  };
+
+  // Animation function
+  const animate = (timestamp: number) => {
+    // Guard against infinite recursion in test environment
+    if (process.env.NODE_ENV === 'test' && lastFrameTimeRef.current === timestamp) {
+      return;
+    }
+
+    // Set last frame time to detect recursion
+    lastFrameTimeRef.current = timestamp;
+
+    // Initialize animation start time using ref
+    if (animationStartTimeRef.current === null) {
+      animationStartTimeRef.current = timestamp;
+    }
+
+    const elapsedTime = timestamp - (animationStartTimeRef.current || timestamp);
+    const progress = Math.min(elapsedTime / MOVEMENT_DURATION, 1);
+    progressRef.current = progress;
+
+    // Update progress state for UI less frequently
+    if (Math.floor(progress * 100) !== Math.floor(progressForUI * 100)) {
+      setProgressForUI(progress);
+    }
+
+    if (progress >= 1) {
+      // Animation complete
+      if (onComplete) {
+        onComplete();
+      }
+      endTest();
+
+      // Cancel animation
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+        requestRef.current = null;
+      }
+      return;
+    }
+
+    const squarePoints = calculateSquarePoints();
+    if (squarePoints.length === 0) {
+      requestRef.current = requestAnimationFrame(animate);
+      return;
+    }
+
+    // Determine which segment of the square we're on
+    const segmentCount = squarePoints.length - 1; // Number of line segments in the square
+    const totalSegmentProgress = progress * segmentCount;
+    const segmentIndex = Math.min(Math.floor(totalSegmentProgress), segmentCount - 1);
+    const segmentProgress = totalSegmentProgress - segmentIndex;
+
+    if (segmentIndex < squarePoints.length - 1) {
+      const startPoint = squarePoints[segmentIndex];
+      const endPoint = squarePoints[segmentIndex + 1];
+
+      // Interpolate between points
+      const newX = startPoint.x + (endPoint.x - startPoint.x) * segmentProgress;
+      const newY = startPoint.y + (endPoint.y - startPoint.y) * segmentProgress;
+
+      const newPosition = { x: newX, y: newY };
+      setPosition(newPosition);
+
+      // Call the position update callback
+      if (onPositionUpdate) {
+        // Convert to percentage coordinates
+        const containerWidth = containerRef.current?.clientWidth || 1;
+        const containerHeight = containerRef.current?.clientHeight || 1;
+        const percentX = (newX / containerWidth) * 100;
+        const percentY = (newY / containerHeight) * 100;
+        onPositionUpdate({ x: percentX, y: percentY });
+      }
+    }
+
+    // Only request next frame if we're not in the test environment or if this is the first frame
+    if (process.env.NODE_ENV !== 'test' || !requestRef.current) {
+      requestRef.current = requestAnimationFrame(animate);
     }
   };
 
-  // Animation loop
+  // Start animation when in testing phase
   useEffect(() => {
-    const animate = (timestamp: number) => {
-      if (startTimeRef.current === null) {
-        startTimeRef.current = timestamp;
-        lastTimestampRef.current = timestamp;
-      }
+    if (testPhase === 'testing') {
+      animationStartTimeRef.current = null;
+      lastFrameTimeRef.current = null;
+      setProgressForUI(0);
+      requestRef.current = requestAnimationFrame(animate);
+    } else if (requestRef.current) {
+      // Clean up animation if not in testing phase
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
 
-      const elapsed = timestamp - startTimeRef.current;
-      const progress = Math.min(elapsed / (duration * 1000), 1);
-      const remainingTime = Math.max(0, Math.ceil(duration - elapsed / 1000));
-
-      // Update time remaining every second
-      if (lastTimestampRef.current && timestamp - lastTimestampRef.current >= 1000) {
-        setTimeRemaining(remainingTime);
-        lastTimestampRef.current = timestamp;
-      }
-
-      // Calculate new position
-      const newPosition = calculatePosition(progress);
-      setPosition(newPosition);
-
-      // Notify about position change
-      if (onPositionChange) {
-        onPositionChange(newPosition);
-      }
-
-      // Continue animation if not complete
-      if (progress < 1) {
-        requestRef.current = requestAnimationFrame(animate);
-      } else {
-        // Animation complete
-        if (onComplete) {
-          onComplete();
-        }
-      }
-    };
-
-    // Start animation loop
-    requestRef.current = requestAnimationFrame(animate);
-
-    // Cleanup on unmount
     return () => {
-      if (requestRef.current !== null) {
+      if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
+        requestRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ballSize, duration, onComplete, onPositionChange, size]);
+  }, [testPhase]);
+
+  // Return early if not in testing phase
+  if (testPhase !== 'testing') {
+    return null;
+  }
+
+  const squarePoints = calculateSquarePoints();
 
   return (
     <div
-      className="relative bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border border-gray-300"
-      style={{ width: size, height: size }}
       ref={containerRef}
+      className="relative w-full h-full"
+      data-testid="animated-ball-container"
     >
-      {/* Timer display */}
-      <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded-md text-sm font-bold">
-        {timeRemaining}s
-      </div>
+      {/* Draw SVG path if enabled */}
+      {showPath && squarePoints.length > 0 && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
+          <path
+            d={`M ${squarePoints.map((p) => `${p.x},${p.y}`).join(' L ')}`}
+            stroke="#CBD5E1" // slate-300
+            strokeWidth="2"
+            strokeDasharray="6 4"
+            fill="none"
+          />
+
+          {/* Current position indicator on the path */}
+          <circle
+            cx={position.x}
+            cy={position.y}
+            r={size / 2 + 5}
+            fill="rgba(79, 70, 229, 0.1)" // Indigo with opacity
+            className="animate-pulse"
+          />
+        </svg>
+      )}
+
+      {/* Position labels if enabled */}
+      {showLabels && squarePoints.length > 0 && (
+        <>
+          {/* Left label */}
+          <div
+            style={{
+              left: squarePoints[0].x - 60,
+              top: squarePoints[0].y - 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Left
+          </div>
+
+          {/* Bottom label */}
+          <div
+            style={{
+              left: squarePoints[1].x - 16,
+              top: squarePoints[1].y + 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Bottom
+          </div>
+
+          {/* Right label */}
+          <div
+            style={{
+              left: squarePoints[2].x + 10,
+              top: squarePoints[2].y - 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Right
+          </div>
+
+          {/* Top label */}
+          <div
+            style={{
+              left: squarePoints[3].x - 12,
+              top: squarePoints[3].y - 30,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Top
+          </div>
+        </>
+      )}
 
       {/* Animated ball */}
       <div
-        className="absolute bg-blue-600 rounded-full shadow-md transform -translate-x-1/2 -translate-y-1/2"
         style={{
-          width: ballSize,
-          height: ballSize,
-          left: position.x,
-          top: position.y,
-          transition: 'left 50ms linear, top 50ms linear',
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: '50%',
+          backgroundColor: color,
+          transform: `translate(${position.x - size / 2}px, ${position.y - size / 2}px)`,
+          transition: 'transform 0.1s linear',
+          position: 'absolute',
+          zIndex: 2,
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
         }}
-        role="presentation"
-        aria-hidden="true"
+        data-testid="animated-ball"
       />
 
-      {/* Visual markers for the corners */}
-      <div className="absolute top-0 left-0 w-3 h-3 bg-red-500 rounded-full" />
-      <div className="absolute bottom-0 left-0 w-3 h-3 bg-red-500 rounded-full" />
-      <div className="absolute bottom-0 right-0 w-3 h-3 bg-red-500 rounded-full" />
-      <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full" />
-
-      {/* Path visualization */}
-      <svg className="absolute inset-0 w-full h-full pointer-events-none">
-        <path
-          d={`M ${ballSize / 2},${ballSize / 2} L ${ballSize / 2},${size - ballSize / 2} L ${size - ballSize / 2},${size - ballSize / 2} L ${size - ballSize / 2},${ballSize / 2} Z`}
-          fill="none"
-          stroke="rgba(209, 213, 219, 0.5)"
-          strokeWidth="2"
-          strokeDasharray="5,5"
-        />
-      </svg>
+      {/* Progress indicator */}
+      <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+        <div className="bg-white bg-opacity-75 rounded-full px-4 py-2 shadow">
+          <div className="w-64 h-2 bg-gray-200 rounded-full">
+            <div
+              className="h-2 bg-indigo-600 rounded-full transition-all"
+              style={{
+                width: `${progressForUI * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

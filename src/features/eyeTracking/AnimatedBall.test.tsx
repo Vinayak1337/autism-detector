@@ -2,109 +2,156 @@ import React from 'react';
 import { render, screen, act } from '@testing-library/react';
 import { AnimatedBall, Point } from './AnimatedBall';
 
+// Mock the useEyeTrackingStore
+jest.mock('./store', () => ({
+  useEyeTrackingStore: jest.fn((selector) => {
+    // Default mock implementation
+    if (selector.toString().includes('testPhase')) {
+      return 'testing'; // Always return 'testing' for testPhase
+    }
+    if (selector.toString().includes('setTestPhase')) {
+      return jest.fn();
+    }
+    if (selector.toString().includes('endTest')) {
+      return jest.fn();
+    }
+    return jest.fn();
+  }),
+}));
+
+// Define a safer mock for requestAnimationFrame that doesn't cause infinite loops
+let frameId = 0;
 // Mock requestAnimationFrame and cancelAnimationFrame
 beforeEach(() => {
-  jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-    cb(0);
-    return 0;
+  jest.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    // Return a unique ID but don't call the callback immediately
+    return ++frameId;
   });
   jest.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
 });
 
 afterEach(() => {
   jest.restoreAllMocks();
+  frameId = 0;
 });
 
 describe('AnimatedBall', () => {
   const defaultProps = {
-    size: 200,
-    ballSize: 20,
-    duration: 60,
-    pattern: 'square' as const,
+    size: 30,
+    color: '#4F46E5',
+    showPath: true,
+    showLabels: true,
   };
 
   it('renders with the correct size', () => {
     const { container } = render(<AnimatedBall {...defaultProps} />);
-    const boxElement = container.firstChild as HTMLElement;
 
-    expect(boxElement).toHaveStyle({
-      width: '200px',
-      height: '200px',
+    // Manually trigger the animation frame once
+    act(() => {
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
     });
+
+    const containerElement = screen.getByTestId('animated-ball-container');
+
+    expect(containerElement).toBeInTheDocument();
+    expect(containerElement).toHaveClass('relative w-full h-full');
   });
 
   it('renders a ball with the correct size', () => {
     render(<AnimatedBall {...defaultProps} />);
 
-    const ballElement = screen.getByRole('presentation', { hidden: true });
-    expect(ballElement).toHaveStyle({
-      width: '20px',
-      height: '20px',
+    // Manually trigger the animation frame once
+    act(() => {
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
     });
+
+    const ballElement = screen.getByTestId('animated-ball');
+    expect(ballElement).toBeInTheDocument();
+    expect(ballElement.style.width).toBe('30px');
+    expect(ballElement.style.height).toBe('30px');
   });
 
-  it('displays the remaining time', () => {
+  it('displays progress indicator', () => {
     render(<AnimatedBall {...defaultProps} />);
 
-    expect(screen.getByText('60s')).toBeInTheDocument();
+    // Manually trigger the animation frame once
+    act(() => {
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
+    });
+
+    // Check for progress indicator elements
+    const progressContainer = document.querySelector('.bg-white.bg-opacity-75.rounded-full');
+    expect(progressContainer).toBeInTheDocument();
   });
 
-  it('calls onPositionChange when position changes', () => {
-    const mockOnPositionChange = jest.fn();
+  it('calls onPositionUpdate when position changes', () => {
+    const mockOnPositionUpdate = jest.fn();
 
-    render(<AnimatedBall {...defaultProps} onPositionChange={mockOnPositionChange} />);
+    render(<AnimatedBall {...defaultProps} onPositionUpdate={mockOnPositionUpdate} />);
 
-    expect(mockOnPositionChange).toHaveBeenCalled();
+    // The animation function should have requested an animation frame
+    expect(window.requestAnimationFrame).toHaveBeenCalled();
+
+    // Force the animation by manually calling the callback
+    act(() => {
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
+    });
+
+    // Now the position update should have been called
+    expect(mockOnPositionUpdate).toHaveBeenCalled();
   });
 
   it('calls onComplete when animation finishes', () => {
     const mockOnComplete = jest.fn();
+    const mockEndTest = jest.fn();
 
-    // Mock a high progress value to simulate completion
-    jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
-      const mockTimestamp = 60001; // Just over 60 seconds
-      cb(mockTimestamp);
-      return 0;
+    // Update the mock to return our mockEndTest
+    (require('./store').useEyeTrackingStore as jest.Mock).mockImplementation((selector) => {
+      if (selector.toString().includes('testPhase')) {
+        return 'testing';
+      }
+      if (selector.toString().includes('endTest')) {
+        return mockEndTest;
+      }
+      return jest.fn();
     });
 
     render(<AnimatedBall {...defaultProps} onComplete={mockOnComplete} />);
 
-    // We need to advance the animation frame and tick
+    // When testing completion, we need to explicitly pass a timestamp that's
+    // greater than the animation duration to trigger the completion logic
     act(() => {
-      jest.runOnlyPendingTimers();
+      // First initialize with a small timestamp
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(1000); // Initialize with a starting timestamp
+
+      // Then explicitly call with a timestamp past the duration
+      animateCallback(MOVEMENT_DURATION + 5000); // Ensure we're well past the duration
     });
 
     expect(mockOnComplete).toHaveBeenCalled();
-  });
-
-  it('calculates correct position based on progress for square pattern', () => {
-    // We'll need to access a private method, so we'll mock it
-    const mockCalculatePosition = jest.fn().mockImplementation((progress) => {
-      const original = AnimatedBall.prototype.calculatePosition;
-      if (progress < 0.25) {
-        return { x: 0, y: 180 * (progress / 0.25) };
-      } else if (progress < 0.5) {
-        return { x: 180 * ((progress - 0.25) / 0.25), y: 180 };
-      } else if (progress < 0.75) {
-        return { x: 180, y: 180 * (1 - (progress - 0.5) / 0.25) };
-      } else {
-        return { x: 180 * (1 - (progress - 0.75) / 0.25), y: 0 };
-      }
-    });
-
-    // Check positions at key points
-    expect(mockCalculatePosition(0)).toEqual({ x: 0, y: 0 }); // Top-left
-    expect(mockCalculatePosition(0.25)).toEqual({ x: 0, y: 180 }); // Bottom-left
-    expect(mockCalculatePosition(0.5)).toEqual({ x: 180, y: 180 }); // Bottom-right
-    expect(mockCalculatePosition(0.75)).toEqual({ x: 180, y: 0 }); // Top-right
-    expect(mockCalculatePosition(1)).toEqual({ x: 0, y: 0 }); // Back to top-left
+    expect(mockEndTest).toHaveBeenCalled();
   });
 
   it('cleans up animation frame on unmount', () => {
     const { unmount } = render(<AnimatedBall {...defaultProps} />);
 
+    // Manually trigger the animation frame once
+    act(() => {
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
+    });
+
+    // Now unmount to test cleanup
     unmount();
 
     expect(window.cancelAnimationFrame).toHaveBeenCalled();
   });
 });
+
+// Add the constant from the component for testing
+const MOVEMENT_DURATION = 60000; // 60 seconds total
