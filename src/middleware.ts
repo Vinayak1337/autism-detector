@@ -4,8 +4,8 @@ import type { NextRequest } from 'next/server';
 // List of public routes that don't require authentication
 const publicPaths = [
   '/',
-  '/sign-in(.*)',
-  '/sign-up(.*)',
+  '/sign-in',
+  '/sign-up',
   '/api/webhook*',
   '/api/public*',
   '/about*',
