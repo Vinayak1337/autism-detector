@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useEyeTracking, EyeTrackingOptions } from './useEyeTracking';
 import { useEyeTrackingStore } from './store';
 import { Point } from './AnimatedBall';
 import { useCameraPermission, PermissionStatus } from './hooks/useCameraPermission';
 import { useTrackingManager } from './hooks/useTrackingManager';
+import { enableDummyDetector } from './modelCache';
 
 // UI Components
 import { DebugPanel } from './components/DebugPanel';
@@ -57,11 +58,8 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
   const [mergedOptions, setMergedOptions] = useState<EyeTrackingOptions>(options);
 
   // Use the camera permission hook
-  const {
-    isPermissionGranted,
-    permissionStatus,
-    checkPermission,
-  } = useCameraPermission(setIsCameraReady);
+  const { isPermissionGranted, permissionStatus, checkPermission } =
+    useCameraPermission(setIsCameraReady);
 
   // Use the eye tracking hook with the current options
   const {
@@ -91,15 +89,13 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
       testPhase,
     });
 
-  // Helper function to check if permission status is an error state
-  const isPermissionError = (status: PermissionStatus): boolean => {
-    return status === 'denied' || status === 'no-device';
-  };
+  // Use ref to track previous options to prevent unnecessary updates
+  const prevOptionsRef = useRef(options);
+  const prevOnGazeDataRef = useRef(onGazeData);
 
-  // Update merged options when the tracking manager is ready
-  useEffect(() => {
-    // Create the handler for gaze movement
-    const handleGazeData = (data: Point) => {
+  // Memoize the gaze data handler to prevent recreation on every render
+  const handleGazeData = useCallback(
+    (data: Point) => {
       // Update current gaze position
       setCurrentGazeX(data.x);
       setCurrentGazeY(data.y);
@@ -108,17 +104,41 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
       if (onGazeData) {
         onGazeData(data);
       }
-    };
+    },
+    [onGazeData]
+  );
 
-    // Merge options with the callback
-    const newMergedOptions = mergeOptions(options, handleGazeData);
-    setMergedOptions(newMergedOptions);
-  }, [options, onGazeData, mergeOptions]);
+  // Use memoized merged options
+  const memoizedMergedOptions = useMemo(() => {
+    // Only recreate if options or onGazeData changed
+    if (options !== prevOptionsRef.current || onGazeData !== prevOnGazeDataRef.current) {
+      prevOptionsRef.current = options;
+      prevOnGazeDataRef.current = onGazeData;
+      return mergeOptions(options, handleGazeData);
+    }
+    return mergedOptions;
+  }, [options, onGazeData, handleGazeData, mergeOptions, mergedOptions]);
+
+  // Update merged options only when the memoized value changes
+  useEffect(() => {
+    // Avoid unnecessary state updates
+    if (JSON.stringify(memoizedMergedOptions) !== JSON.stringify(mergedOptions)) {
+      setMergedOptions(memoizedMergedOptions);
+    }
+  }, [memoizedMergedOptions, mergedOptions]);
+
+  // Helper function to check if permission status is an error state
+  const isPermissionError = (status: PermissionStatus): boolean => {
+    return status === 'denied' || status === 'no-device';
+  };
+
+  // Use ref to prevent multiple timeouts
+  const forceShowTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Enable dummy detector for testing
-  const enableDummyDetector = () => {
+  const enableDummyDetectorHandler = () => {
     console.log('Force continuing to UI using dummy detector');
-    window._useDummyDetector = true;
+    enableDummyDetector();
     handleRetry();
   };
 
@@ -132,21 +152,30 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
 
   // Add a timeout effect to force-show the interface if camera is ready
   useEffect(() => {
-    if (isCameraReady && !isReady) {
+    if (isCameraReady && !isReady && !forceShowTimeoutRef.current) {
       // Force the interface to show after 5 seconds if camera is ready
-      const forceShowTimeout = setTimeout(() => {
+      forceShowTimeoutRef.current = setTimeout(() => {
         if (!isReady && isCameraReady) {
           console.log('Forcing UI to show since camera is ready but isReady is still false');
           // Enable the dummy detector
           if (typeof window !== 'undefined' && !window._useDummyDetector) {
             window._useDummyDetector = true;
             console.log('Force enabled dummy detector due to timeout');
-            handleRetry();
+            // Add debounce to prevent rapid state changes
+            setTimeout(() => {
+              handleRetry();
+            }, 500);
           }
         }
+        forceShowTimeoutRef.current = null;
       }, 5000);
 
-      return () => clearTimeout(forceShowTimeout);
+      return () => {
+        if (forceShowTimeoutRef.current) {
+          clearTimeout(forceShowTimeoutRef.current);
+          forceShowTimeoutRef.current = null;
+        }
+      };
     }
   }, [isCameraReady, isReady, handleRetry]);
 
@@ -166,7 +195,7 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
           isWebcamLoading={isWebcamLoading}
           setupAttempts={setupAttempts}
           onRetry={handleRetry}
-          onEnableDummyDetector={enableDummyDetector}
+          onEnableDummyDetector={enableDummyDetectorHandler}
           onEnableStableDetector={enableStableDetector}
         />
       )}
@@ -227,7 +256,7 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
           permissionStatus={permissionStatus}
           error={error}
           onRetry={handleRetry}
-          onEnableDummyDetector={enableDummyDetector}
+          onEnableDummyDetector={enableDummyDetectorHandler}
           onEnableStableDetector={enableStableDetector}
         />
       </div>

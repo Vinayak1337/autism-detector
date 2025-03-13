@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { EyeTrackingOptions } from '../useEyeTracking';
 import { Point } from '../AnimatedBall';
 
@@ -35,6 +35,8 @@ export function useTrackingManager({
   const [faceDetected, setFaceDetected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const prevTrackingErrorRef = useRef<string | null>(null);
+  const lastDetectionTimeRef = useRef<number>(0);
+  const detectionDebounceTimeMs = 1000; // 1 second debounce
 
   // Add retry mechanism for webcam setup
   useEffect(() => {
@@ -211,38 +213,54 @@ export function useTrackingManager({
     startTracking().catch(console.error);
   };
 
-  const handleGazeMove = (x: number, y: number, onGazeData?: (data: Point) => void) => {
-    const gazePoint: Point = { x, y };
-
-    // Call the component callback
-    if (onGazeData) {
-      onGazeData(gazePoint);
-    }
-
-    // Update face detection status - only if not already detected
-    if (!faceDetected) {
-      console.log('Face detected in gaze tracking');
-      setFaceDetected(true);
-
-      // Update global state
-      setEyeDetected(true);
+  // Memoize handleGazeMove to prevent recreation on every render
+  const handleGazeMove = useCallback(
+    (x: number, y: number, onGazeData?: (data: Point) => void) => {
+      const gazePoint: Point = { x, y };
 
       // Call the component callback
-      if (onEyeDetected) {
-        onEyeDetected(true);
+      if (onGazeData) {
+        onGazeData(gazePoint);
       }
-    }
-  };
 
-  const mergeOptions = (
-    options: EyeTrackingOptions,
-    onGazeData?: (data: Point) => void
-  ): EyeTrackingOptions => {
-    return {
-      ...options,
-      onGazeMove: (x, y) => handleGazeMove(x, y, onGazeData),
-    };
-  };
+      // Update face detection status - only if not already detected and not too recent
+      const now = Date.now();
+      if (!faceDetected && now - lastDetectionTimeRef.current > detectionDebounceTimeMs) {
+        console.log('Face detected in gaze tracking');
+        lastDetectionTimeRef.current = now;
+        setFaceDetected(true);
+
+        // Update global state
+        setEyeDetected(true);
+
+        // Call the component callback - add setTimeout to prevent sync loop
+        if (onEyeDetected) {
+          setTimeout(() => {
+            onEyeDetected(true);
+          }, 100);
+        }
+      }
+    },
+    [
+      faceDetected,
+      lastDetectionTimeRef,
+      detectionDebounceTimeMs,
+      setFaceDetected,
+      setEyeDetected,
+      onEyeDetected,
+    ]
+  );
+
+  // Memoize mergeOptions to prevent recreation on every render
+  const mergeOptions = useCallback(
+    (options: EyeTrackingOptions, onGazeData?: (data: Point) => void): EyeTrackingOptions => {
+      return {
+        ...options,
+        onGazeMove: (x, y) => handleGazeMove(x, y, onGazeData),
+      };
+    },
+    [handleGazeMove]
+  );
 
   return {
     faceDetected,

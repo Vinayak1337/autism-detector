@@ -160,6 +160,10 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
   const webcamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const forceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Add ref for throttling gaze updates
+  const lastGazeUpdateTimeRef = useRef<number>(0);
+  const gazeUpdateThrottleMs = 100; // Throttle to 10 updates per second
+
   /**
    * Converts canvas coordinates to screen percentage (0-100)
    */
@@ -201,14 +205,29 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
       if (options.onGazeMove) {
         const screenPoint = canvasToScreenCoordinates(point.x, point.y, canvasWidth, canvasHeight);
 
-        // Trigger the callback
-        options.onGazeMove(screenPoint.x, screenPoint.y);
+        // Throttle the callback and state updates to prevent excessive rendering
+        const now = Date.now();
+        if (now - lastGazeUpdateTimeRef.current >= gazeUpdateThrottleMs) {
+          lastGazeUpdateTimeRef.current = now;
 
-        // Store in global state
-        setGazeData([...currentGazeData, screenPoint]);
+          // Trigger the callback
+          options.onGazeMove(screenPoint.x, screenPoint.y);
+
+          // Use requestAnimationFrame to batch updates and avoid sync state changes
+          requestAnimationFrame(() => {
+            // Only update global state if we're actually tracking
+            if (isTracking) {
+              // Add the new point to global state, but limit the array size
+              const updatedGazeData = [...currentGazeData, screenPoint];
+              // Keep only the last 100 points to avoid memory issues
+              const limitedGazeData = updatedGazeData.slice(-100);
+              setGazeData(limitedGazeData);
+            }
+          });
+        }
       }
     },
-    [canvasToScreenCoordinates, setGazeData, currentGazeData]
+    [canvasToScreenCoordinates, setGazeData, currentGazeData, isTracking]
   );
 
   /**

@@ -12,6 +12,7 @@ export interface Point {
 // Ball path definitions for the square pattern
 const MOVEMENT_DURATION = 60000; // 60 seconds total
 const SQUARE_SIZE = 60; // Percentage of the container size
+const POSITION_UPDATE_THROTTLE_MS = 100; // Throttle position updates to 10fps
 
 interface AnimatedBallProps {
   onComplete?: () => void;
@@ -42,6 +43,7 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   const requestRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
+  const lastPositionUpdateTimeRef = useRef<number>(0);
 
   // Calculate the square points based on container dimensions and SQUARE_SIZE
   const calculateSquarePoints = (): Point[] => {
@@ -70,91 +72,104 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   };
 
   // Animation function
-  const animate = useCallback((timestamp: number) => {
-    // Guard against infinite recursion in test environment
-    if (process.env.NODE_ENV === 'test' && lastFrameTimeRef.current === timestamp) {
-      return;
-    }
-
-    // Set last frame time to detect recursion
-    lastFrameTimeRef.current = timestamp;
-
-    // Initialize animation start time using ref
-    if (animationStartTimeRef.current === null) {
-      animationStartTimeRef.current = timestamp;
-    }
-
-    const elapsedTime = timestamp - (animationStartTimeRef.current || timestamp);
-    const progress = Math.min(elapsedTime / MOVEMENT_DURATION, 1);
-    progressRef.current = progress;
-
-    // Update progress state for UI less frequently - throttle to only update if significant change
-    // Using a ref to track last update time to prevent infinite loop
-    const lastProgressUpdate = progressRef.current;
-    if (
-      Math.floor(progress * 100) !== Math.floor(progressForUI * 100) &&
-      lastProgressUpdate !== progress
-    ) {
-      // Use setTimeout to break the synchronous execution cycle
-      requestAnimationFrame(() => {
-        setProgressForUI(progress);
-      });
-    }
-
-    if (progress >= 1) {
-      // Animation complete
-      if (onComplete) {
-        onComplete();
+  const animate = useCallback(
+    (timestamp: number) => {
+      // Guard against infinite recursion in test environment
+      if (process.env.NODE_ENV === 'test' && lastFrameTimeRef.current === timestamp) {
+        return;
       }
-      endTest();
 
-      // Cancel animation
-      if (requestRef.current) {
-        cancelAnimationFrame(requestRef.current);
-        requestRef.current = null;
+      // Set last frame time to detect recursion
+      lastFrameTimeRef.current = timestamp;
+
+      // Initialize animation start time using ref
+      if (animationStartTimeRef.current === null) {
+        animationStartTimeRef.current = timestamp;
       }
-      return;
-    }
 
-    const squarePoints = calculateSquarePoints();
-    if (squarePoints.length === 0) {
-      requestRef.current = requestAnimationFrame(animate);
-      return;
-    }
+      const elapsedTime = timestamp - (animationStartTimeRef.current || timestamp);
+      const progress = Math.min(elapsedTime / MOVEMENT_DURATION, 1);
+      progressRef.current = progress;
 
-    // Determine which segment of the square we're on
-    const segmentCount = squarePoints.length - 1; // Number of line segments in the square
-    const totalSegmentProgress = progress * segmentCount;
-    const segmentIndex = Math.min(Math.floor(totalSegmentProgress), segmentCount - 1);
-    const segmentProgress = totalSegmentProgress - segmentIndex;
-
-    if (segmentIndex < squarePoints.length - 1) {
-      const startPoint = squarePoints[segmentIndex];
-      const endPoint = squarePoints[segmentIndex + 1];
-
-      // Interpolate between points
-      const newX = startPoint.x + (endPoint.x - startPoint.x) * segmentProgress;
-      const newY = startPoint.y + (endPoint.y - startPoint.y) * segmentProgress;
-
-      const newPosition = { x: newX, y: newY };
-      setPosition(newPosition);
-
-      // Call the position update callback
-      if (onPositionUpdate) {
-        // Convert to percentage coordinates
-        const containerWidth = containerRef.current?.clientWidth || 1;
-        const containerHeight = containerRef.current?.clientHeight || 1;
-        const percentX = (newX / containerWidth) * 100;
-        const percentY = (newY / containerHeight) * 100;
-        onPositionUpdate({ x: percentX, y: percentY });
+      // Update progress state for UI less frequently - throttle to only update if significant change
+      // Using a ref to track last update time to prevent infinite loop
+      const lastProgressUpdate = progressRef.current;
+      if (
+        Math.floor(progress * 100) !== Math.floor(progressForUI * 100) &&
+        lastProgressUpdate !== progress
+      ) {
+        // Use setTimeout to break the synchronous execution cycle
+        requestAnimationFrame(() => {
+          setProgressForUI(progress);
+        });
       }
-    }
 
-    // Only request next frame if we're not in the test environment or if this is the first frame
-    if (process.env.NODE_ENV !== 'test' || !requestRef.current) {
-      requestRef.current = requestAnimationFrame(animate);
-    }
-  }, [endTest, onComplete, onPositionUpdate, progressForUI]);
+      if (progress >= 1) {
+        // Animation complete
+        if (onComplete) {
+          onComplete();
+        }
+        endTest();
+
+        // Cancel animation
+        if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+          requestRef.current = null;
+        }
+        return;
+      }
+
+      const squarePoints = calculateSquarePoints();
+      if (squarePoints.length === 0) {
+        requestRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      // Determine which segment of the square we're on
+      const segmentCount = squarePoints.length - 1; // Number of line segments in the square
+      const totalSegmentProgress = progress * segmentCount;
+      const segmentIndex = Math.min(Math.floor(totalSegmentProgress), segmentCount - 1);
+      const segmentProgress = totalSegmentProgress - segmentIndex;
+
+      if (segmentIndex < squarePoints.length - 1) {
+        const startPoint = squarePoints[segmentIndex];
+        const endPoint = squarePoints[segmentIndex + 1];
+
+        // Interpolate between points
+        const newX = startPoint.x + (endPoint.x - startPoint.x) * segmentProgress;
+        const newY = startPoint.y + (endPoint.y - startPoint.y) * segmentProgress;
+
+        const newPosition = { x: newX, y: newY };
+        setPosition(newPosition);
+
+        // Call the position update callback, but throttle the updates
+        const now = timestamp;
+        if (
+          onPositionUpdate &&
+          now - lastPositionUpdateTimeRef.current > POSITION_UPDATE_THROTTLE_MS
+        ) {
+          lastPositionUpdateTimeRef.current = now;
+
+          // Convert to percentage coordinates
+          const containerWidth = containerRef.current?.clientWidth || 1;
+          const containerHeight = containerRef.current?.clientHeight || 1;
+          const percentX = (newX / containerWidth) * 100;
+          const percentY = (newY / containerHeight) * 100;
+
+          // Use setTimeout to avoid synchronous updates
+          setTimeout(() => {
+            onPositionUpdate({ x: percentX, y: percentY });
+          }, 0);
+        }
+      }
+
+      // Only request next frame if we're not in the test environment or if this is the first frame
+      if (process.env.NODE_ENV !== 'test' || !requestRef.current) {
+        requestRef.current = requestAnimationFrame(animate);
+      }
+    },
+    [endTest, onComplete, onPositionUpdate, progressForUI]
+  );
 
   // Start animation when in testing phase
   useEffect(() => {

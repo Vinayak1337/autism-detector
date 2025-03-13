@@ -10,6 +10,8 @@ declare global {
   interface Window {
     _useDummyDetector?: boolean;
     _dummyDetectorStable?: boolean;
+    _modelLoadAttempts?: number;
+    _modelLoadUrls?: string[];
   }
 }
 
@@ -20,6 +22,18 @@ interface FaceLandmarksDetectionModule {
   };
   createDetector(model: string, config?: Record<string, unknown>): Promise<FaceLandmarksDetector>;
 }
+
+// Alternative model URLs to try if the default one fails
+// Using both TensorFlow Hub and CDN alternatives
+const MODEL_URLS = [
+  // Default TF Hub URL - may have CORS issues
+  'https://tfhub.dev/mediapipe/tfjs-model/face_landmarks_detection/face_mesh/1/model.json?tfjs-format=file',
+  // CORS-friendly CDN alternatives
+  'https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@0.0.1/model/model.json',
+  'https://storage.googleapis.com/tfjs-models/savedmodel/face_landmarks_detection/face_mesh/model.json',
+  // Fallback to other repositories
+  'https://storage.googleapis.com/tfhub-tfjs-modules/mediapipe/face_landmarks_detection/face_mesh/1/model.json',
+];
 
 // Variable to track if we've warned about server-side usage
 let hasWarnedAboutServer = false;
@@ -91,6 +105,74 @@ async function loadFaceLandmarksDetection(): Promise<FaceLandmarksDetectionModul
 }
 
 /**
+ * Custom detector that loads models from specified URLs to avoid CORS issues
+ */
+async function createDetectorWithCustomModelPath(
+  faceLandmarksDetection: FaceLandmarksDetectionModule,
+  tf: typeof import('@tensorflow/tfjs'),
+  modelOptions: Record<string, unknown>
+): Promise<FaceLandmarksDetector> {
+  // Initialize or increment the attempt counter
+  if (typeof window !== 'undefined') {
+    window._modelLoadAttempts = (window._modelLoadAttempts || 0) + 1;
+    window._modelLoadUrls = window._modelLoadUrls || [...MODEL_URLS];
+  }
+
+  // Check if we have no more URLs to try
+  if (!window._modelLoadUrls || window._modelLoadUrls.length === 0) {
+    throw new Error('All model URLs have been tried without success');
+  }
+
+  // Get the next URL to try
+  const modelUrl = window._modelLoadUrls.shift();
+  if (!modelUrl) {
+    throw new Error('Failed to get a valid model URL');
+  }
+
+  console.log(
+    `Attempting to load model from URL (attempt ${window._modelLoadAttempts}): ${modelUrl}`
+  );
+
+  // Store the original load function
+  const originalLoadFn = tf.io.http;
+
+  try {
+    // Modify TensorFlow.js model loading behavior to use custom URL
+    tf.io.http = (path: string) => {
+      console.log(`Redirecting model load from ${path} to ${modelUrl}`);
+      return originalLoadFn(modelUrl);
+    };
+
+    // Create detector with custom model path
+    const detector = await faceLandmarksDetection.createDetector(
+      faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+      modelOptions
+    );
+
+    // Restore original function
+    tf.io.http = originalLoadFn;
+
+    console.log(`Successfully loaded model from ${modelUrl}`);
+    return detector;
+  } catch (error) {
+    console.error(`Failed to load model from ${modelUrl}:`, error);
+
+    // Reset the HTTP override
+    if (tf.io.http !== originalLoadFn) {
+      tf.io.http = originalLoadFn;
+    }
+
+    // If we have more URLs to try, do so recursively
+    if (window._modelLoadUrls.length > 0) {
+      console.log(`Trying next model URL, ${window._modelLoadUrls.length} remaining...`);
+      return createDetectorWithCustomModelPath(faceLandmarksDetection, tf, modelOptions);
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Creates a face landmarks detector using TensorFlow.js
  * Only imports the libraries when actually called, ensuring server-side safety
  */
@@ -140,13 +222,22 @@ export async function createFaceLandmarksDetector(): Promise<FaceLandmarksDetect
 
     try {
       console.log('Creating face landmarks detector with options:', JSON.stringify(modelOptions));
-      const detector = await faceLandmarksDetection.createDetector(
-        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-        modelOptions
-      );
 
-      console.log('Face detector created successfully');
-      return detector;
+      // Try our custom model loading approach to avoid CORS issues
+      try {
+        return await createDetectorWithCustomModelPath(faceLandmarksDetection, tf, modelOptions);
+      } catch (customModelError) {
+        console.warn('Custom model loading failed, trying standard approach:', customModelError);
+
+        // Fall back to the standard approach
+        const detector = await faceLandmarksDetection.createDetector(
+          faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+          modelOptions
+        );
+
+        console.log('Face detector created successfully with standard approach');
+        return detector;
+      }
     } catch (modelError) {
       console.warn('Failed to create detector with standard options:', modelError);
 
@@ -165,13 +256,29 @@ export async function createFaceLandmarksDetector(): Promise<FaceLandmarksDetect
         };
 
         console.log('Creating CPU-based detector with options:', JSON.stringify(cpuModelOptions));
-        const cpuDetector = await faceLandmarksDetection.createDetector(
-          faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-          cpuModelOptions
-        );
 
-        console.log('CPU-based detector created successfully');
-        return cpuDetector;
+        // Try custom model loading again with CPU options
+        try {
+          return await createDetectorWithCustomModelPath(
+            faceLandmarksDetection,
+            tf,
+            cpuModelOptions
+          );
+        } catch (customCpuError) {
+          console.warn(
+            'Custom CPU model loading failed, trying standard approach:',
+            customCpuError
+          );
+
+          // Fall back to standard approach with CPU
+          const cpuDetector = await faceLandmarksDetection.createDetector(
+            faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+            cpuModelOptions
+          );
+
+          console.log('CPU-based detector created successfully with standard approach');
+          return cpuDetector;
+        }
       } catch (fallbackError) {
         console.error('All detector creation approaches failed:', fallbackError);
         throw fallbackError;
