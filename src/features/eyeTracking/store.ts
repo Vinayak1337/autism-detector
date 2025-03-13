@@ -109,8 +109,8 @@ export const useEyeTrackingStore = create<EyeTrackingState>()(
           gazeData: [],
           analysisResults: null,
         }),
-      
-      resetTestState: () => 
+
+      resetTestState: () =>
         set({
           testPhase: 'ready',
           testStartTime: null,

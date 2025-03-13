@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { EyeTrackingComponent } from '../../EyeTrackingComponent';
+import { WebcamFeed } from '../WebcamFeed';
 import { EyeTrackingStats } from './EyeTrackingStats';
 import { AnimationBox } from './AnimationBox';
 import { TestControls } from './TestControls';
@@ -54,11 +54,24 @@ export const TestingPhase: React.FC<TestingPhaseProps> = ({
       </div>
 
       {/* Webcam area */}
-      <div className="w-full" style={{ height: '300px' }}>
-        <EyeTrackingComponent
-          width="100%"
-          height="100%"
-          testPhase="testing"
+      <div
+        style={{
+          width: '100%',
+          maxWidth: '32rem' /* max-w-lg = 32rem */,
+          height: '384px' /* h-96 = 384px */,
+          margin: '0 auto',
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '0.5rem',
+          border: '2px solid #d1d5db',
+        }}
+      >
+        <WebcamFeed
+          phase="testing"
+          containerStyle={{
+            border: 'none',
+            borderRadius: '0',
+          }}
           onGazeData={onGazeData}
         />
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { EyeTrackingComponent } from '../EyeTrackingComponent';
+import { WebcamFeed } from './WebcamFeed';
 
 interface SetupPhaseProps {
   isCameraReady: boolean;
@@ -71,11 +71,13 @@ export const SetupPhase: React.FC<SetupPhaseProps> = ({
       <h2 className="text-2xl font-bold mb-4">Setting Up Camera</h2>
       <p className="mb-4">Please allow access to your webcam.</p>
       <div className="w-full max-w-lg mx-auto h-96 border-2 border-gray-300 rounded-lg overflow-hidden relative">
-        <EyeTrackingComponent
-          width="100%"
-          height="100%"
-          testPhase="setup"
-          onEyeDetected={(detected) => {
+        <WebcamFeed
+          phase="setup"
+          containerStyle={{
+            border: 'none',
+            borderRadius: '0',
+          }}
+          onEyeDetected={() => {
             // Don't call onProceed directly here - the useEffect will handle it
           }}
         />
