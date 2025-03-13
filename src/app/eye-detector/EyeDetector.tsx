@@ -2,14 +2,13 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import Webcam from 'react-webcam';
-import { useEyeTrackingStore } from './store';
-import { Point } from './AnimatedBall';
+import { drawMesh } from './utilities';
 import * as tf from '@tensorflow/tfjs';
 // Explicitly import backends to ensure they're available
 import '@tensorflow/tfjs-backend-webgl';
 import '@tensorflow/tfjs-backend-cpu';
 
-// Define types we need for our component
+// Define only the types we need for our component
 interface Keypoint {
   x: number;
   y: number;
@@ -41,34 +40,12 @@ interface FaceLandmarksDetector {
   estimateFaces: (image: HTMLVideoElement | HTMLImageElement) => Promise<FacePrediction[]>;
 }
 
-interface EyeTrackingComponentProps {
-  width?: string | number;
-  height?: string | number;
-  testPhase?: string;
-  onGazeData?: (point: Point) => void;
-  onEyeDetected?: (detected: boolean) => void;
-}
-
-export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
-  width = '100%',
-  height = '100%',
-  testPhase = 'setup',
-  onGazeData,
-  onEyeDetected,
-}) => {
+const EyeDetector = () => {
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isModelLoading, setIsModelLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<FaceLandmarksDetector | null>(null);
-
-  // Access the store state and actions
-  const {
-    setIsCameraReady,
-    setEyeDetected,
-    testPhase: currentTestPhase,
-    addGazePoint,
-  } = useEyeTrackingStore();
 
   const loadModels = async () => {
     try {
@@ -78,8 +55,9 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
       await tf.ready();
       console.log('TensorFlow.js is ready');
 
-      // Load the blazeface model which is more reliable
-      console.log('Loading blazeface model...');
+      // Instead of trying to load the MediaPipe model which is having issues,
+      // let's use the blazeface model which is more reliable
+      console.log('Loading face-landmarks-detection module...');
       const blazeFace = await import('@tensorflow-models/blazeface');
 
       // Load the BlazeFace model
@@ -112,13 +90,13 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
               { x: pred.landmarks[5][0], y: pred.landmarks[5][1], z: 0 },
             ];
 
-            // Add boundary points around eyes (more detailed eye contour)
+            // Add boundary points around eyes
             const leftEyeX = pred.landmarks[0][0];
             const leftEyeY = pred.landmarks[0][1];
             const rightEyeX = pred.landmarks[1][0];
             const rightEyeY = pred.landmarks[1][1];
 
-            // Add 8 points around each eye
+            // Add 8 points around each eye to create a more detailed eye contour
             // Left eye
             for (let i = 0; i < 8; i++) {
               const angle = (i / 8) * 2 * Math.PI;
@@ -197,84 +175,25 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
 
         // Make Detections
         const faces = await detector.estimateFaces(video);
-        const eyesDetected = faces.length > 0;
+        console.log(
+          'Face detection results:',
+          faces.length > 0 ? faces[0].keypoints.length + ' keypoints found' : 'No faces'
+        );
 
-        // Update store and notify parent component if needed
-        setEyeDetected(eyesDetected);
-        if (onEyeDetected) {
-          onEyeDetected(eyesDetected);
-        }
-
-        // If we have faces, calculate gaze position and draw
-        if (faces.length > 0) {
-          // Calculate gaze position as normalized coordinates (0-100%)
-          const face = faces[0];
-          const leftEye = face.keypoints[0];
-          const rightEye = face.keypoints[1];
-
-          // Center point between eyes
-          const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-          const eyeCenterY = (leftEye.y + rightEye.y) / 2;
-
-          // Convert to percentage of screen
-          const gazeX = (eyeCenterX / videoWidth) * 100;
-          const gazeY = (eyeCenterY / videoHeight) * 100;
-
-          // Create gaze point
-          const gazePoint: Point = {
-            x: Math.min(Math.max(gazeX, 0), 100),
-            y: Math.min(Math.max(gazeY, 0), 100),
-            timestamp: Date.now(),
-          };
-
-          // Call onGazeData callback if provided
-          if (onGazeData) {
-            onGazeData(gazePoint);
-          }
-
-          // Add to store if in testing phase
-          if (currentTestPhase === 'testing') {
-            addGazePoint(gazePoint);
-          }
-
-          // Get canvas context for visualization
-          if (canvasRef.current) {
-            const ctx = canvasRef.current.getContext('2d');
-            if (ctx) {
-              // Clear the canvas
-              ctx.clearRect(0, 0, videoWidth, videoHeight);
-
-              // Draw eye circles
-              ctx.beginPath();
-              ctx.arc(leftEye.x, leftEye.y, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = 'aqua';
-              ctx.fill();
-
-              ctx.beginPath();
-              ctx.arc(rightEye.x, rightEye.y, 5, 0, 2 * Math.PI);
-              ctx.fillStyle = 'aqua';
-              ctx.fill();
-
-              // Draw line between eyes
-              ctx.beginPath();
-              ctx.moveTo(leftEye.x, leftEye.y);
-              ctx.lineTo(rightEye.x, rightEye.y);
-              ctx.strokeStyle = 'aqua';
-              ctx.lineWidth = 2;
-              ctx.stroke();
-
-              // Draw center point between eyes
-              ctx.beginPath();
-              ctx.arc(eyeCenterX, eyeCenterY, 3, 0, 2 * Math.PI);
-              ctx.fillStyle = 'yellow';
-              ctx.fill();
-            }
-          }
-        } else if (canvasRef.current) {
-          // Clear the canvas if no faces
+        // Get canvas context
+        if (canvasRef.current) {
           const ctx = canvasRef.current.getContext('2d');
           if (ctx) {
+            // Convert Face[] to the expected format for drawMesh
+            const facesWithScaledMesh = faces.map((face: FacePrediction) => ({
+              scaledMesh: face.keypoints.map((kp) => [kp.x, kp.y, kp.z || 0]),
+            }));
+
+            // Clear the canvas before drawing
             ctx.clearRect(0, 0, videoWidth, videoHeight);
+
+            // Draw the mesh (should only draw eyes based on our utilities.tsx)
+            drawMesh(facesWithScaledMesh, ctx);
           }
         }
       } catch (err) {
@@ -283,7 +202,6 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
     }
   };
 
-  // Initialize the models on mount
   useEffect(() => {
     // Only load models in the browser
     if (typeof window !== 'undefined') {
@@ -291,35 +209,9 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
     }
 
     return () => {
-      // Cleanup
+      // Cleanup function
     };
   }, []);
-
-  // Handle webcam ready state
-  useEffect(() => {
-    const checkWebcam = () => {
-      if (
-        webcamRef.current &&
-        webcamRef.current.video &&
-        webcamRef.current.video.readyState === 4
-      ) {
-        setIsCameraReady(true);
-        console.log('Camera is ready');
-      } else {
-        setIsCameraReady(false);
-      }
-    };
-
-    // Initial check
-    checkWebcam();
-
-    // Set up interval to check periodically
-    const interval = setInterval(checkWebcam, 1000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [setIsCameraReady]);
 
   // Set up the detection loop if detector is available
   useEffect(() => {
@@ -334,72 +226,60 @@ export const EyeTrackingComponent: React.FC<EyeTrackingComponentProps> = ({
     };
   }, [detector]);
 
-  const webcamStyle = {
-    width,
-    height,
-    position: 'absolute' as const,
-    margin: 0,
-    padding: 0,
-    transform: 'scaleX(-1)', // Mirror the webcam view
-  };
-
-  const canvasStyle = {
-    width,
-    height,
-    position: 'absolute' as const,
-    margin: 0,
-    padding: 0,
-    transform: 'scaleX(-1)', // Mirror the canvas to match webcam
-  };
-
-  // Add some error styling
-  const errorStyle = {
+  // Add some nicer styling for the loading and error states
+  const messageStyle = {
     position: 'absolute' as const,
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
-    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     color: 'white',
-    padding: '10px',
-    borderRadius: '4px',
+    padding: '20px',
+    borderRadius: '8px',
     zIndex: 10,
     textAlign: 'center' as const,
     maxWidth: '80%',
   };
 
   return (
-    <div style={{ position: 'relative', width, height }}>
-      {isModelLoading && (
-        <div
+    <div className="App">
+      {isModelLoading && <div style={messageStyle}>Loading facial detection models...</div>}
+      {error && (
+        <div style={{ ...messageStyle, backgroundColor: 'rgba(220, 53, 69, 0.8)' }}>{error}</div>
+      )}
+      <header className="App-header">
+        <Webcam
+          ref={webcamRef}
           style={{
             position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 10,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            color: 'white',
-            padding: '10px',
-            borderRadius: '4px',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            zIndex: 9,
+            width: 640,
+            height: 480,
           }}
-        >
-          Loading face detection...
-        </div>
-      )}
+        />
 
-      {error && <div style={errorStyle}>{error}</div>}
-
-      <Webcam
-        ref={webcamRef}
-        style={webcamStyle}
-        audio={false}
-        screenshotFormat="image/jpeg"
-        videoConstraints={{
-          facingMode: 'user',
-        }}
-      />
-
-      <canvas ref={canvasRef} style={canvasStyle} className="eye-tracking-overlay" />
+        <canvas
+          ref={canvasRef}
+          style={{
+            position: 'absolute',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            zIndex: 9,
+            width: 640,
+            height: 480,
+          }}
+        />
+      </header>
     </div>
   );
 };
+
+export default EyeDetector;
