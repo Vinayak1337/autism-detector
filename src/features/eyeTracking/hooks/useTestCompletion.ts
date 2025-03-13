@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { analyzeEyeMovementData } from '../dataProcessing';
+import { analyzeEyeMovementData, AnalysisResult } from '../dataProcessing';
 import { Point } from '../AnimatedBall';
 import { TestPhase } from '../store';
 
@@ -9,7 +9,7 @@ interface UseTestCompletionProps {
   gazeData: Point[];
   targetPositions: Array<{ x: number; y: number }>;
   getConsistentTimestamps: (dataLength: number) => number[];
-  setAnalysisResults: (results: any) => void;
+  setAnalysisResults: (results: AnalysisResult) => void;
   setTestPhase: (phase: TestPhase) => void;
 }
 

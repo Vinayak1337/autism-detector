@@ -1,12 +1,11 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { EyeTrackingComponent } from '../../EyeTrackingComponent';
+import { WebcamFeed } from '../WebcamFeed';
 import { EyeTrackingStats } from './EyeTrackingStats';
 import { AnimationBox } from './AnimationBox';
 import { TestControls } from './TestControls';
 import { Point } from '../../AnimatedBall';
-import './testing-phase-styles.css';
 
 interface TestingPhaseProps {
   eyeDetected: boolean;
@@ -54,15 +53,25 @@ export const TestingPhase: React.FC<TestingPhaseProps> = ({
         </div>
       </div>
 
-      {/* Webcam area - add a special class to ensure proper visualization */}
+      {/* Webcam area */}
       <div
-        className="w-full eye-tracking-webcam-container"
-        style={{ height: '300px', position: 'relative' }}
+        style={{
+          width: '100%',
+          maxWidth: '32rem' /* max-w-lg = 32rem */,
+          height: '384px' /* h-96 = 384px */,
+          margin: '0 auto',
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '0.5rem',
+          border: '2px solid #d1d5db',
+        }}
       >
-        <EyeTrackingComponent
-          width="100%"
-          height="100%"
-          testPhase="testing"
+        <WebcamFeed
+          phase="testing"
+          containerStyle={{
+            border: 'none',
+            borderRadius: '0',
+          }}
           onGazeData={onGazeData}
         />
       </div>

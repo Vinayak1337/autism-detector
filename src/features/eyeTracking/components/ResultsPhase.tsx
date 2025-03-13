@@ -171,7 +171,7 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
 
         {/* Next Steps */}
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-lg font-semibold mb-3">What's Next?</h3>
+          <h3 className="text-lg font-semibold mb-3">What&apos;s Next?</h3>
           <div className="space-y-4">
             <p>Your results have been saved. You can:</p>
             <div className="flex flex-wrap gap-4 justify-center">

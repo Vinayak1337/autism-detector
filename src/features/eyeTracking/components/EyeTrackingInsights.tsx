@@ -13,7 +13,6 @@ interface EyeTrackingInsightsProps {
  */
 export const EyeTrackingInsights: React.FC<EyeTrackingInsightsProps> = ({ className = '' }) => {
   const gazeData = useEyeTrackingStore((state) => state.gazeData);
-  const testPhase = useEyeTrackingStore((state) => state.testPhase);
   const analysisResults = useEyeTrackingStore((state) => state.analysisResults);
 
   const [insights, setInsights] = useState<{

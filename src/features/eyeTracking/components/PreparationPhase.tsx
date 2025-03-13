@@ -17,7 +17,7 @@ export const PreparationPhase: React.FC<PreparationPhaseProps> = ({ onStart }) =
       <div className="bg-indigo-50 p-6 rounded-lg shadow-sm mb-8 max-w-2xl mx-auto">
         <h2 className="text-xl font-semibold mb-4">Instructions:</h2>
         <ul className="text-left list-disc pl-6 space-y-2 mb-4">
-          <li>Ensure you're in a well-lit environment with minimal glare on your screen</li>
+          <li>Ensure you&apos;re in a well-lit environment with minimal glare on your screen</li>
           <li>Position yourself approximately 20-30 inches (50-75 cm) from your screen</li>
           <li>Try to keep your head relatively still during the test</li>
           <li>Follow the moving ball with your eyes without moving your head</li>

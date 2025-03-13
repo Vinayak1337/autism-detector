@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { TestPhase } from '../store';
 import { LiveEyeTracker } from './LiveEyeTracker';
 
 interface IntroPhaseProps {

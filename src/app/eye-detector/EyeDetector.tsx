@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import { drawMesh } from './utilities';
 import * as tf from '@tensorflow/tfjs';
@@ -148,7 +148,7 @@ const EyeDetector = () => {
     }
   };
 
-  const detect = async () => {
+  const detect = useCallback(async () => {
     if (!detector) return;
 
     if (
@@ -200,7 +200,7 @@ const EyeDetector = () => {
         console.error('Error in detection:', err);
       }
     }
-  };
+  }, [detector, webcamRef, canvasRef]);
 
   useEffect(() => {
     // Only load models in the browser
@@ -224,7 +224,7 @@ const EyeDetector = () => {
     return () => {
       clearInterval(detectionInterval);
     };
-  }, [detector]);
+  }, [detector, detect]);
 
   // Add some nicer styling for the loading and error states
   const messageStyle = {

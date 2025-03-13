@@ -8,7 +8,7 @@ interface AnimationBoxProps {
   onComplete: () => void;
   onPositionUpdate: (position: { x: number; y: number }) => void;
   lastPosition: Point;
-  forwardedRef?: React.RefObject<HTMLDivElement>;
+  forwardedRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 export const AnimationBox: React.FC<AnimationBoxProps> = ({
