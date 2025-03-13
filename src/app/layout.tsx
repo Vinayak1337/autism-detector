@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ClerkProvider } from '@/components/providers/ClerkProvider';
+import { ModelCacheInitializer } from '@/features/eyeTracking/ModelCacheInitializer';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -27,7 +28,11 @@ export default function RootLayout({
     <html lang="en">
       <head>{/* TensorFlow.js will be loaded directly through npm package */}</head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ClerkProvider>{children}</ClerkProvider>
+        <ClerkProvider>
+          {/* Initializes TensorFlow model cache */}
+          <ModelCacheInitializer />
+          {children}
+        </ClerkProvider>
       </body>
     </html>
   );
