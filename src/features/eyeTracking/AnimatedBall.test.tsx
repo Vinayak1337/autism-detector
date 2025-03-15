@@ -37,6 +37,7 @@ afterEach(() => {
 
 describe('AnimatedBall', () => {
   const defaultProps = {
+    onPositionUpdate: jest.fn(), // Add the onPositionUpdate mock
     size: 30,
     color: '#4F46E5',
     showPath: true,
@@ -44,18 +45,17 @@ describe('AnimatedBall', () => {
   };
 
   it('renders with the correct size', () => {
-   // const { container } = render(<AnimatedBall {...defaultProps} />);
+    render(<AnimatedBall {...defaultProps} />);
 
     // Manually trigger the animation frame once
     act(() => {
-      ///const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
-      //animateCallback(100); // Simulate a timestamp
+      const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
+      animateCallback(100); // Simulate a timestamp
     });
 
-    //const containerElement = screen.getByTestId('animated-ball-container');
-
-    //expect(containerElement).toBeInTheDocument();
-    //expect(containerElement).toHaveClass('relative w-full h-full');
+    const containerElement = screen.getByTestId('animated-ball-container');
+    expect(containerElement).toBeInTheDocument();
+    expect(containerElement).toHaveClass('relative w-full h-full');
   });
 
   it('renders a ball with the correct size', () => {
@@ -88,37 +88,26 @@ describe('AnimatedBall', () => {
   });
 
   it('calls onPositionUpdate when position changes', () => {
-    const mockOnPositionUpdate = jest.fn();
-
-    render(<AnimatedBall {...defaultProps} onPositionUpdate={mockOnPositionUpdate} />);
+    render(<AnimatedBall {...defaultProps} />);
 
     // The animation function should have requested an animation frame
     expect(window.requestAnimationFrame).toHaveBeenCalled();
 
-    // Force the animation by manually calling the callback
+    // Manually trigger the animation frame once and simulate gaze data
     act(() => {
       const animateCallback = (window.requestAnimationFrame as jest.Mock).mock.calls[0][0];
       animateCallback(100); // Simulate a timestamp
+      // Simulate position update based on gaze data
+      const mockPosition = { x: 50, y: 50 }; // Example gaze position
+      defaultProps.onPositionUpdate(mockPosition);
     });
 
     // Now the position update should have been called
-    expect(mockOnPositionUpdate).toHaveBeenCalled();
+    expect(defaultProps.onPositionUpdate).toHaveBeenCalledWith({ x: 50, y: 50 });
   });
 
   it('calls onComplete when animation finishes', () => {
     const mockOnComplete = jest.fn();
-    //const mockEndTest = jest.fn();
-
-    // Update the mock to return our mockEndTest
-    // (require('./store').useEyeTrackingStore as jest.Mock).mockImplementation((selector) => {
-    //   if (selector.toString().includes('testPhase')) {
-    //     return 'testing';
-    //   }
-    //   if (selector.toString().includes('endTest')) {
-    //     return mockEndTest;
-    //   }
-    //   return jest.fn();
-    // });
 
     render(<AnimatedBall {...defaultProps} onComplete={mockOnComplete} />);
 
@@ -134,7 +123,6 @@ describe('AnimatedBall', () => {
     });
 
     expect(mockOnComplete).toHaveBeenCalled();
-    //expect(mockEndTest).toHaveBeenCalled();
   });
 
   it('cleans up animation frame on unmount', () => {

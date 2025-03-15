@@ -2,6 +2,9 @@
 
 import React from 'react';
 import { WebcamFeed } from './components/WebcamFeed';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { createFaceLandmarksDetector, FaceLandmarksDetector } from './faceLandmarkUtils';
+import { useEyeTrackingStore } from './store';
 import { Point } from './AnimatedBall';
 
 interface EyeTrackingComponentProps {

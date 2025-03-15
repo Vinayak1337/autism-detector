@@ -445,7 +445,6 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
    * Set up webcam with timeout and robust error handling
    */
   const setupWebcam = useCallback(async () => {
-    // Skip on server
     if (!isBrowser) {
       console.warn('Webcam setup called in non-browser environment');
       return Promise.resolve();
@@ -487,6 +486,7 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
           height: { ideal: 480 },
         },
         audio: false,
+        
       });
 
       webcamRef.current.srcObject = stream;
@@ -548,7 +548,6 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
         // Add event listeners
         if (webcamRef.current) {
           webcamRef.current.addEventListener('loadedmetadata', handleMetadataLoaded);
-          webcamRef.current.addEventListener('loadeddata', handleDataLoaded);
           webcamRef.current.addEventListener('error', handleVideoError);
         }
 
@@ -579,7 +578,7 @@ export function useEyeTracking(options: EyeTrackingOptions = {}): EyeTrackingSta
       });
     } catch (err) {
       console.error('Error setting up webcam:', err);
-      setError(`Failed to setup webcam: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`Failed to setup webcam: ${err instanceof Error ? err.message : String(err)}. Please check your camera permissions and ensure no other applications are using the camera.`);
       setIsWebcamLoading(false);
       throw err;
     }

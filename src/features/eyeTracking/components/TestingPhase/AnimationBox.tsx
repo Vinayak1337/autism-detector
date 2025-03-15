@@ -1,8 +1,10 @@
 'use client';
 
 import React from 'react';
+import { useEffect } from 'react';
 import { AnimatedBall } from '../../AnimatedBall';
 import { Point } from '../../AnimatedBall';
+import { useEyeTrackingStore } from '../../store';
 
 interface AnimationBoxProps {
   onComplete: () => void;
@@ -16,7 +18,12 @@ export const AnimationBox: React.FC<AnimationBoxProps> = ({
   onPositionUpdate,
   lastPosition,
   forwardedRef,
-}) => {
+})  => {
+  const startTest = useEyeTrackingStore((state: { startTest: () => void }) => state.startTest);
+
+  useEffect(() => {
+    startTest(); // Call startTest to set the testPhase to 'testing'
+  }, [startTest]);
   return (
     <div
       ref={forwardedRef}

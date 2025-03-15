@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { analyzeEyeMovementData, AnalysisResult } from '../dataProcessing';
 import { Point } from '../AnimatedBall';
 import { TestPhase } from '../store';
@@ -20,16 +20,40 @@ export function useTestCompletion({
   setAnalysisResults,
   setTestPhase,
 }: UseTestCompletionProps) {
+  // Ref to track the latest data for immediate analysis
+  const latestGazeDataRef = useRef<Point[]>(gazeData);
+  const latestTargetPositionsRef = useRef<Array<{ x: number; y: number }>>(targetPositions);
+
+  // Sync props with refs whenever they change
+  useEffect(() => {
+    latestGazeDataRef.current = gazeData;
+    console.log('Gaze data updated:', gazeData.length);
+  }, [gazeData]);
+
+  useEffect(() => {
+    latestTargetPositionsRef.current = targetPositions;
+    console.log('Target positions updated:', targetPositions.length);
+  }, [targetPositions]);
+
   // Handle test completion with data analysis
   const handleTestComplete = useCallback(() => {
-    // Check if we have enough data to analyze
-    if (gazeData.length > 10 && targetPositions.length > 10) {
+    // Use the latest data from refs to ensure we have the most up-to-date values
+    const currentGazeData = latestGazeDataRef.current;
+    const currentTargetPositions = latestTargetPositionsRef.current;
+
+    console.log('Handling test completion with data:', {
+      gazeDataLength: currentGazeData.length,
+      targetPositionsLength: currentTargetPositions.length,
+    });
+
+    // Check if we have enough data to analyze (lowered threshold to 2 for debugging)
+    if (currentGazeData.length > 2 && currentTargetPositions.length > 2) {
       try {
         // Get timestamps (either existing or generated)
-        const timestamps = getConsistentTimestamps(gazeData.length);
+        const timestamps = getConsistentTimestamps(currentGazeData.length);
 
         // Analyze eye movement data
-        const results = analyzeEyeMovementData(gazeData, targetPositions, timestamps);
+        const results = analyzeEyeMovementData(currentGazeData, currentTargetPositions, timestamps);
 
         // Store results and move to results phase
         setAnalysisResults(results);
@@ -40,11 +64,14 @@ export function useTestCompletion({
         setTestPhase('results');
       }
     } else {
-      console.warn('Not enough data to analyze');
-      // Show results screen anyway
+      console.warn('Not enough data to analyze', {
+        gazeDataLength: currentGazeData.length,
+        targetPositionsLength: currentTargetPositions.length,
+      });
+      // Show results screen anyway with a fallback message
       setTestPhase('results');
     }
-  }, [gazeData, targetPositions, getConsistentTimestamps, setAnalysisResults, setTestPhase]);
+  }, [getConsistentTimestamps, setAnalysisResults, setTestPhase]);
 
   return {
     handleTestComplete,

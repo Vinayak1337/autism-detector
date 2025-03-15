@@ -1,132 +1,134 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { useEyeTrackingStore } from './store';
+import { analyzeEyeMovementData } from './dataProcessing';
 
-// Point interface for positions
 export interface Point {
   x: number;
   y: number;
 }
 
-// Ball path definitions for the square pattern
-const MOVEMENT_DURATION = 60000; // 60 seconds total
-const SQUARE_SIZE = 60; // Percentage of the container size
-const POSITION_UPDATE_THROTTLE_MS = 100; // Throttle position updates to 10fps
+const MOVEMENT_DURATION = 10000;
+const SQUARE_SIZE = 60;
+const POSITION_UPDATE_THROTTLE_MS = 100;
 
 interface AnimatedBallProps {
   onComplete?: () => void;
-  onPositionUpdate?: (position: Point) => void; // New prop to report position updates
-  size?: number; // Ball size in pixels
+  onPositionUpdate?: (position: Point) => void;
+  size?: number;
   color?: string;
-  showPath?: boolean; // Whether to show the path
-  showLabels?: boolean; // Whether to show position labels
+  showPath?: boolean;
+  showLabels?: boolean;
 }
 
 export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   onComplete,
   onPositionUpdate,
   size = 30,
-  color = '#4F46E5', // Indigo-600
+  color = '#4F46E5',
   showPath = true,
   showLabels = true,
 }) => {
   const testPhase = useEyeTrackingStore((state) => state.testPhase);
-  //const setTestPhase = useEyeTrackingStore((state) => state.setTestPhase);
   const endTest = useEyeTrackingStore((state) => state.endTest);
+  const eyesDetected = useEyeTrackingStore((state) => state.eyeDetected);
 
-  const [position, setPosition] = useState<Point>({ x: 0, y: 0 });
-  // Use refs instead of state to avoid re-renders during animation
+  const ballRef = useRef<HTMLDivElement>(null);
   const animationStartTimeRef = useRef<number | null>(null);
   const progressRef = useRef<number>(0);
-  const [progressForUI, setProgressForUI] = useState(0);
   const requestRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastFrameTimeRef = useRef<number | null>(null);
   const lastPositionUpdateTimeRef = useRef<number>(0);
+  const isAnimatingRef = useRef(false);
+  const shouldStopRef = useRef(false);
+  const lastStopTimeRef = useRef<number>(0);
 
-  // Calculate the square points based on container dimensions and SQUARE_SIZE
-  const calculateSquarePoints = (): Point[] => {
-    if (!containerRef.current) return [];
+  const [eyePositions, setEyePositions] = useState<Point[]>([]);
+  const [targetPositions, setTargetPositions] = useState<Point[]>([]);
+  const [timestamps, setTimestamps] = useState<number[]>([]);
 
+  const calculateSquarePoints = useCallback((): Point[] => {
+    if (!containerRef.current) {
+      console.warn('Container ref not ready');
+      return [];
+    }
     const containerWidth = containerRef.current.clientWidth;
     const containerHeight = containerRef.current.clientHeight;
-
-    // Calculate the square dimensions as a percentage of container
+    console.log('Container dimensions:', { containerWidth, containerHeight }); // Debug dimensions
+    if (containerWidth === 0 || containerHeight === 0) {
+      console.warn('Container dimensions not ready:', containerWidth, containerHeight);
+      return [];
+    }
     const squareWidth = (containerWidth * SQUARE_SIZE) / 100;
     const squareHeight = (containerHeight * SQUARE_SIZE) / 100;
-
-    // Position the square in the center of the container
     const offsetX = (containerWidth - squareWidth) / 2;
     const offsetY = (containerHeight - squareHeight) / 2;
-
-    // Create the square points - Start at the left point and move clockwise
-    // Left → Down → Right → Up → Left
-    return [
-      { x: offsetX, y: offsetY + squareHeight / 2 }, // Left middle
-      { x: offsetX + squareWidth / 2, y: offsetY + squareHeight }, // Bottom middle
-      { x: offsetX + squareWidth, y: offsetY + squareHeight / 2 }, // Right middle
-      { x: offsetX + squareWidth / 2, y: offsetY }, // Top middle
-      { x: offsetX, y: offsetY + squareHeight / 2 }, // Back to left middle
+    const points = [
+      { x: offsetX, y: offsetY + squareHeight / 2 },
+      { x: offsetX + squareWidth / 2, y: offsetY + squareHeight },
+      { x: offsetX + squareWidth, y: offsetY + squareHeight / 2 },
+      { x: offsetX + squareWidth / 2, y: offsetY },
+      { x: offsetX, y: offsetY + squareHeight / 2 },
     ];
-  };
+    console.log('Calculated squarePoints:', points);
+    return points;
+  }, []);
 
-  // Animation function
   const animate = useCallback(
     (timestamp: number) => {
-      // Guard against infinite recursion in test environment
+      console.log('animate called with timestamp:', timestamp);
       if (process.env.NODE_ENV === 'test' && lastFrameTimeRef.current === timestamp) {
+        console.log('Skipping duplicate frame in test env');
         return;
       }
-
-      // Set last frame time to detect recursion
       lastFrameTimeRef.current = timestamp;
 
-      // Initialize animation start time using ref
       if (animationStartTimeRef.current === null) {
-        animationStartTimeRef.current = timestamp;
+        animationStartTimeRef.current = timestamp - progressRef.current * MOVEMENT_DURATION;
+        console.log('Animation start time set:', animationStartTimeRef.current);
       }
 
       const elapsedTime = timestamp - (animationStartTimeRef.current || timestamp);
       const progress = Math.min(elapsedTime / MOVEMENT_DURATION, 1);
       progressRef.current = progress;
-
-      // Update progress state for UI less frequently - throttle to only update if significant change
-      // Using a ref to track last update time to prevent infinite loop
-      const lastProgressUpdate = progressRef.current;
-      if (
-        Math.floor(progress * 100) !== Math.floor(progressForUI * 100) &&
-        lastProgressUpdate !== progress
-      ) {
-        // Use setTimeout to break the synchronous execution cycle
-        requestAnimationFrame(() => {
-          setProgressForUI(progress);
-        });
-      }
+      console.log('Progress:', progress);
 
       if (progress >= 1) {
-        // Animation complete
-        if (onComplete) {
-          onComplete();
-        }
+        if (onComplete) onComplete();
         endTest();
-
-        // Cancel animation
         if (requestRef.current) {
           cancelAnimationFrame(requestRef.current);
           requestRef.current = null;
         }
+        isAnimatingRef.current = false;
+        lastStopTimeRef.current = timestamp;
+        console.log('Animation completed');
+        return;
+      }
+
+      if (shouldStopRef.current) {
+        if (requestRef.current) {
+          cancelAnimationFrame(requestRef.current);
+          requestRef.current = null;
+        }
+        isAnimatingRef.current = false;
+        lastStopTimeRef.current = timestamp;
+        console.log('Animation paused at progress:', progress);
         return;
       }
 
       const squarePoints = calculateSquarePoints();
-      if (squarePoints.length === 0) {
+      console.log('squarePoints length:', squarePoints.length, 'ballRef exists:', !!ballRef.current);
+      if (!ballRef.current || squarePoints.length === 0) {
+        console.warn('Cannot animate: ballRef or squarePoints missing');
         requestRef.current = requestAnimationFrame(animate);
+        console.log('Animation frame requested (retry):', requestRef.current);
         return;
       }
 
-      // Determine which segment of the square we're on
-      const segmentCount = squarePoints.length - 1; // Number of line segments in the square
+      const segmentCount = squarePoints.length - 1;
       const totalSegmentProgress = progress * segmentCount;
       const segmentIndex = Math.min(Math.floor(totalSegmentProgress), segmentCount - 1);
       const segmentProgress = totalSegmentProgress - segmentIndex;
@@ -134,177 +136,110 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
       if (segmentIndex < squarePoints.length - 1) {
         const startPoint = squarePoints[segmentIndex];
         const endPoint = squarePoints[segmentIndex + 1];
-
-        // Interpolate between points
         const newX = startPoint.x + (endPoint.x - startPoint.x) * segmentProgress;
         const newY = startPoint.y + (endPoint.y - startPoint.y) * segmentProgress;
 
-        const newPosition = { x: newX, y: newY };
-        setPosition(newPosition);
+        ballRef.current.style.transform = `translate(${newX - size / 2}px, ${newY - size / 2}px)`;
+        console.log('Ball position updated:', { x: newX - size / 2, y: newY - size / 2 });
 
-        // Call the position update callback, but throttle the updates
         const now = timestamp;
-        if (
-          onPositionUpdate &&
-          now - lastPositionUpdateTimeRef.current > POSITION_UPDATE_THROTTLE_MS
-        ) {
+        if (now - lastPositionUpdateTimeRef.current > POSITION_UPDATE_THROTTLE_MS) {
           lastPositionUpdateTimeRef.current = now;
-
-          // Convert to percentage coordinates
           const containerWidth = containerRef.current?.clientWidth || 1;
           const containerHeight = containerRef.current?.clientHeight || 1;
           const percentX = (newX / containerWidth) * 100;
           const percentY = (newY / containerHeight) * 100;
+          const targetPosition = { x: percentX, y: percentY };
+          console.log('Collecting data:', { targetPosition, now });
+          if (onPositionUpdate) onPositionUpdate(targetPosition);
 
-          // Use setTimeout to avoid synchronous updates
-          setTimeout(() => {
-            onPositionUpdate({ x: percentX, y: percentY });
-          }, 0);
+          setTargetPositions((prev) => [...prev, targetPosition]);
+          setTimestamps((prev) => [...prev, now]);
+          const simulatedEyePosition = {
+            x: percentX + (Math.random() - 0.5) * 10,
+            y: percentY + (Math.random() - 0.5) * 10,
+          };
+          setEyePositions((prev) => [...prev, simulatedEyePosition]);
         }
       }
 
-      // Only request next frame if we're not in the test environment or if this is the first frame
-      if (process.env.NODE_ENV !== 'test' || !requestRef.current) {
-        requestRef.current = requestAnimationFrame(animate);
-      }
+      requestRef.current = requestAnimationFrame(animate);
+      console.log('Animation frame requested:', requestRef.current);
     },
-    [endTest, onComplete, onPositionUpdate, progressForUI]
+    [endTest, onComplete, onPositionUpdate, size, calculateSquarePoints]
   );
 
-  // Start animation when in testing phase
   useEffect(() => {
-    if (testPhase === 'testing') {
-      animationStartTimeRef.current = null;
-      lastFrameTimeRef.current = null;
-      setProgressForUI(0);
+    console.log('useEffect triggered:', { testPhase, eyesDetected, isAnimating: isAnimatingRef.current });
+    const squarePoints = calculateSquarePoints();
+    const now = performance.now();
+
+    if (
+      testPhase === 'testing' &&
+      eyesDetected &&
+      !isAnimatingRef.current &&
+      squarePoints.length > 0 &&
+      (lastStopTimeRef.current === 0 || now - lastStopTimeRef.current > 500)
+    ) {
+      console.log('Animation started. Square Points:', squarePoints);
+      isAnimatingRef.current = true;
+      shouldStopRef.current = false;
       requestRef.current = requestAnimationFrame(animate);
-    } else if (requestRef.current) {
-      // Clean up animation if not in testing phase
-      cancelAnimationFrame(requestRef.current);
-      requestRef.current = null;
+      console.log('Initial animation frame requested:', requestRef.current);
+      setEyePositions([]);
+      setTargetPositions([]);
+      setTimestamps([]);
+    }
+
+    if (isAnimatingRef.current && (testPhase !== 'testing' || !eyesDetected)) {
+      shouldStopRef.current = true;
+      console.log('Conditions failed, animation will pause on next frame');
     }
 
     return () => {
       if (requestRef.current) {
+        console.log('Cleaning up requestRef:', requestRef.current);
         cancelAnimationFrame(requestRef.current);
         requestRef.current = null;
+        isAnimatingRef.current = false;
+        shouldStopRef.current = false;
       }
     };
-  }, [testPhase, animate]);
+  }, [testPhase, eyesDetected, animate, calculateSquarePoints]);
 
-  // Return early if not in testing phase
-  if (testPhase !== 'testing') {
-    return null;
-  }
+  useEffect(() => {
+    console.log('eyesDetected changed to:', eyesDetected);
+  }, [eyesDetected]);
 
-  const squarePoints = calculateSquarePoints();
+  useEffect(() => {
+    if (!isAnimatingRef.current && progressRef.current >= 1) {
+      console.log('Collected Data:', { eyePositions, targetPositions, timestamps });
+      try {
+        const result = analyzeEyeMovementData(eyePositions, targetPositions, timestamps);
+        console.log('Analysis Result:', result);
+        useEyeTrackingStore.getState().setAnalysisResults?.(result);
+      } catch (error) {
+        console.error('Analysis Error:', error);
+      }
+    }
+  }, [isAnimatingRef.current, progressRef.current, eyePositions, targetPositions, timestamps]);
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full"
-      data-testid="animated-ball-container"
-    >
-      {/* Draw SVG path if enabled */}
-      {showPath && squarePoints.length > 0 && (
-        <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 1 }}>
-          <path
-            d={`M ${squarePoints.map((p) => `${p.x},${p.y}`).join(' L ')}`}
-            stroke="#CBD5E1" // slate-300
-            strokeWidth="2"
-            strokeDasharray="6 4"
-            fill="none"
-          />
-
-          {/* Current position indicator on the path */}
-          <circle
-            cx={position.x}
-            cy={position.y}
-            r={size / 2 + 5}
-            fill="rgba(79, 70, 229, 0.1)" // Indigo with opacity
-            className="animate-pulse"
-          />
+    <div ref={containerRef} className="relative w-full h-full" style={{ visibility: testPhase === 'testing' && eyesDetected ? 'visible' : 'hidden' }}>
+      {showPath && calculateSquarePoints().length > 0 && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          <path d={`M ${calculateSquarePoints().map((p) => `${p.x},${p.y}`).join(' L ')}`} stroke="#CBD5E1" strokeWidth="2" strokeDasharray="6 4" fill="none" />
         </svg>
       )}
-
-      {/* Position labels if enabled */}
-      {showLabels && squarePoints.length > 0 && (
+      {showLabels && calculateSquarePoints().length > 0 && (
         <>
-          {/* Left label */}
-          <div
-            style={{
-              left: squarePoints[0].x - 60,
-              top: squarePoints[0].y - 10,
-            }}
-            className="absolute text-sm font-bold text-gray-600"
-          >
-            Left
-          </div>
-
-          {/* Bottom label */}
-          <div
-            style={{
-              left: squarePoints[1].x - 16,
-              top: squarePoints[1].y + 10,
-            }}
-            className="absolute text-sm font-bold text-gray-600"
-          >
-            Bottom
-          </div>
-
-          {/* Right label */}
-          <div
-            style={{
-              left: squarePoints[2].x + 10,
-              top: squarePoints[2].y - 10,
-            }}
-            className="absolute text-sm font-bold text-gray-600"
-          >
-            Right
-          </div>
-
-          {/* Top label */}
-          <div
-            style={{
-              left: squarePoints[3].x - 12,
-              top: squarePoints[3].y - 30,
-            }}
-            className="absolute text-sm font-bold text-gray-600"
-          >
-            Top
-          </div>
+          <div style={{ left: calculateSquarePoints()[0].x - 60, top: calculateSquarePoints()[0].y - 10 }} className="absolute text-sm font-bold text-gray-600">Left</div>
+          <div style={{ left: calculateSquarePoints()[1].x - 16, top: calculateSquarePoints()[1].y + 10 }} className="absolute text-sm font-bold text-gray-600">Bottom</div>
+          <div style={{ left: calculateSquarePoints()[2].x + 10, top: calculateSquarePoints()[2].y - 10 }} className="absolute text-sm font-bold text-gray-600">Right</div>
+          <div style={{ left: calculateSquarePoints()[3].x - 12, top: calculateSquarePoints()[3].y - 30 }} className="absolute text-sm font-bold text-gray-600">Top</div>
         </>
       )}
-
-      {/* Animated ball */}
-      <div
-        style={{
-          width: `${size}px`,
-          height: `${size}px`,
-          borderRadius: '50%',
-          backgroundColor: color,
-          transform: `translate(${position.x - size / 2}px, ${position.y - size / 2}px)`,
-          transition: 'transform 0.1s linear',
-          position: 'absolute',
-          zIndex: 2,
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-        }}
-        data-testid="animated-ball"
-      />
-
-      {/* Progress indicator */}
-      <div className="absolute bottom-4 left-0 right-0 flex justify-center">
-        <div className="bg-white bg-opacity-75 rounded-full px-4 py-2 shadow">
-          <div className="w-64 h-2 bg-gray-200 rounded-full">
-            <div
-              className="h-2 bg-indigo-600 rounded-full transition-all"
-              style={{
-                width: `${progressForUI * 100}%`,
-              }}
-            />
-          </div>
-        </div>
-      </div>
+      <div ref={ballRef} style={{ width: `${size}px`, height: `${size}px`, borderRadius: '50%', backgroundColor: color, position: 'absolute', transition: 'transform 0.1s linear' }} />
     </div>
   );
 };

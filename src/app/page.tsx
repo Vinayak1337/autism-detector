@@ -3,6 +3,9 @@ import Link from 'next/link';
 export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center">
+      <h1>Welcome to the Autism Detector</h1>
+     
+
       <main className="flex flex-col items-center max-w-4xl gap-8">
         <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">Autism Detection App</h1>
         <p className="text-xl text-gray-600 dark:text-gray-400 max-w-2xl">
@@ -104,15 +107,15 @@ export default function Home() {
             </div>
             <h3 className="text-lg font-medium">Detailed Reports</h3>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Get comprehensive insights and recommendations
+              Receive comprehensive insights from your assessment
             </p>
           </div>
         </div>
-      </main>
 
-      <footer className="mt-24 text-sm text-gray-500">
-        &copy; {new Date().getFullYear()} Autism Detection App. All rights reserved.
-      </footer>
+        <footer className="mt-24 text-sm text-gray-500">
+          © {new Date().getFullYear()} Autism Detection App. All rights reserved.
+        </footer>
+      </main>
     </div>
   );
 }

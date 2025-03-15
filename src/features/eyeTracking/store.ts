@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { Point } from './AnimatedBall';
 import { devtools } from 'zustand/middleware';
+import { debounce } from 'lodash'; // Import lodash debounce
 
 // Define test phases for eye tracking flow
 export type TestPhase = 'intro' | 'setup' | 'ready' | 'testing' | 'results';
@@ -53,73 +54,88 @@ export interface EyeTrackingState {
 
 export const useEyeTrackingStore = create<EyeTrackingState>()(
   devtools(
-    (set) => ({
-      // Camera and model status
-      isModelLoading: true,
-      isCameraReady: false,
-      eyeDetected: false,
+    (set) => {
+      // Debounced setEyeDetected to prevent rapid updates
+      const setEyeDetectedDebounced = debounce((detected: boolean) => {
+        console.log('eyesDetected set to:', detected);
+        set({ eyeDetected: detected });
+      }, 500); // 500ms debounce delay
 
-      // Test status
-      testPhase: 'intro',
-      testStartTime: null,
-      testEndTime: null,
+      return {
+        // Camera and model status
+        isModelLoading: true,
+        isCameraReady: false,
+        eyeDetected: false,
 
-      // Gaze data
-      gazeData: [],
+        // Test status
+        testPhase: 'intro',
+        testStartTime: null,
+        testEndTime: null,
 
-      // Analysis results
-      analysisResults: null,
+        // Gaze data
+        gazeData: [],
 
-      // Actions
-      setIsModelLoading: (loading) => set({ isModelLoading: loading }),
-      setIsCameraReady: (isReady) => set({ isCameraReady: isReady }),
-      setEyeDetected: (detected) => set({ eyeDetected: detected }),
+        // Analysis results
+        analysisResults: null,
 
-      setTestPhase: (phase) => set({ testPhase: phase }),
+        // Actions
+        setIsModelLoading: (loading) => set({ isModelLoading: loading }),
 
-      setGazeData: (data) => set({ gazeData: data }),
+        setIsCameraReady: (isReady) => set({ isCameraReady: isReady }),
 
-      addGazePoint: (point) =>
-        set((state) => ({
-          gazeData: [...state.gazeData, point],
-        })),
+        setEyeDetected: (detected) => setEyeDetectedDebounced(detected), // Use debounced version
 
-      clearGazeData: () => set({ gazeData: [] }),
+        setTestPhase: (phase) => {
+          console.log('testPhase set to:', phase);
+          set({ testPhase: phase });
+        },
 
-      startTest: () =>
-        set({
-          testPhase: 'testing',
-          testStartTime: new Date(),
-          gazeData: [], // Clear previous data
-        }),
+        setGazeData: (data) => set({ gazeData: data }),
 
-      endTest: () =>
-        set(() => ({
-          testPhase: 'results',
-          testEndTime: new Date(),
-        })),
+        addGazePoint: (point) =>
+          set((state) => ({
+            gazeData: [...state.gazeData, point],
+          })),
 
-      setAnalysisResults: (results) => set({ analysisResults: results }),
+        clearGazeData: () => set({ gazeData: [] }),
 
-      resetTest: () =>
-        set({
-          testPhase: 'intro',
-          testStartTime: null,
-          testEndTime: null,
-          gazeData: [],
-          analysisResults: null,
-        }),
+        startTest: () => {
+          console.log("Starting test, setting testPhase to 'testing'");
+          set({
+            testPhase: 'testing',
+            testStartTime: new Date(),
+            gazeData: [], // Clear previous data
+          });
+        },
 
-      resetTestState: () =>
-        set({
-          testPhase: 'ready',
-          testStartTime: null,
-          testEndTime: null,
-          gazeData: [],
-          analysisResults: null,
-          eyeDetected: false,
-        }),
-    }),
+        endTest: () =>
+          set(() => ({
+            testPhase: 'results',
+            testEndTime: new Date(),
+          })),
+
+        setAnalysisResults: (results) => set({ analysisResults: results }),
+
+        resetTest: () =>
+          set({
+            testPhase: 'intro',
+            testStartTime: null,
+            testEndTime: null,
+            gazeData: [],
+            analysisResults: null,
+          }),
+
+        resetTestState: () =>
+          set({
+            testPhase: 'ready',
+            testStartTime: null,
+            testEndTime: null,
+            gazeData: [],
+            analysisResults: null,
+            eyeDetected: false,
+          }),
+      };
+    },
     {
       name: 'eye-tracking-store',
     }

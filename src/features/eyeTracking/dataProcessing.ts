@@ -1,8 +1,11 @@
 'use client';
 
-import { Point } from './AnimatedBall';
-
 // Types for eye tracking data analysis
+export interface Point {
+  x: number;
+  y: number;
+}
+
 export interface EyeMovementData {
   position: Point;
   targetPosition: Point;
@@ -25,13 +28,12 @@ export interface SaccadeData {
   velocity: number;
 }
 
-// Make this compatible with the store's version
 export interface AnalysisResult {
   saccadeFrequency: number;
   averageFixationDuration: number;
   wiggleScore: number;
   deviationScore: number;
-  riskAssessment: string; // Match the string type from store.ts
+  riskAssessment: string;
   testDate: Date;
   fixationPercentage: number;
 }
@@ -39,7 +41,6 @@ export interface AnalysisResult {
 // Constants for analysis
 const FIXATION_THRESHOLD = 5; // Maximum distance between points to be considered a fixation
 const SACCADE_THRESHOLD = 15; // Minimum distance to be considered a saccade
-// const NORMAL_FIXATION_DURATION = 200; // Normal fixation duration in ms
 const WIGGLE_THRESHOLD = 5; // Threshold for unwanted movement
 const DEVIATION_THRESHOLD = 15; // Threshold for deviation from target
 
@@ -178,7 +179,6 @@ export function calculateAverageFixationDuration(fixationDurations: number[]): n
 
 /**
  * Calculate a "wiggle" score based on unwanted vertical/horizontal movements
- * when the target is moving horizontally/vertically
  */
 export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): number {
   if (eyeData.length === 0 || targetData.length === 0) return 0;
@@ -186,7 +186,6 @@ export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): num
   let totalWiggle = 0;
   let wigglePoints = 0;
 
-  // Interpolate target data to match eye data length if needed
   const interpolatedTargets: Point[] = [];
   if (targetData.length !== eyeData.length) {
     for (let i = 0; i < eyeData.length; i++) {
@@ -207,15 +206,12 @@ export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): num
     const eyeDX = Math.abs(eyeData[i].x - eyeData[i - 1].x);
     const eyeDY = Math.abs(eyeData[i].y - eyeData[i - 1].y);
 
-    // If target moving horizontally, check for unwanted vertical eye movement
     if (targetDX > targetDY) {
       if (eyeDY > WIGGLE_THRESHOLD) {
         totalWiggle += eyeDY;
         wigglePoints++;
       }
-    }
-    // If target moving vertically, check for unwanted horizontal eye movement
-    else if (targetDY > targetDX) {
+    } else if (targetDY > targetDX) {
       if (eyeDX > WIGGLE_THRESHOLD) {
         totalWiggle += eyeDX;
         wigglePoints++;
@@ -232,7 +228,6 @@ export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): num
 export function calculateDeviationScore(eyeData: Point[], targetData: Point[]): number {
   if (eyeData.length === 0 || targetData.length === 0) return 0;
 
-  // Interpolate target data to match eye data length if needed
   const interpolatedTargets: Point[] = [];
   if (targetData.length !== eyeData.length) {
     for (let i = 0; i < eyeData.length; i++) {
@@ -262,38 +257,32 @@ export function determineRiskAssessment(
   wiggleScore: number,
   deviationScore: number
 ): string {
-  // Create a scoring system (0-100) where higher scores indicate more risk
   let riskScore = 0;
 
-  // Abnormal saccade frequency (too high or too low)
   if (saccadeFrequency < 1) {
     riskScore += 25; // Too few saccades
   } else if (saccadeFrequency > 5) {
     riskScore += 25; // Too many saccades
   }
 
-  // Abnormal fixation duration
   if (avgFixationDuration < 100) {
     riskScore += 20; // Too short fixations
   } else if (avgFixationDuration > 500) {
     riskScore += 20; // Too long fixations
   }
 
-  // Wiggle score (unwanted movements)
   if (wiggleScore > 10) {
     riskScore += 20;
   } else if (wiggleScore > 5) {
     riskScore += 10;
   }
 
-  // Deviation score (not following target)
   if (deviationScore > 30) {
     riskScore += 30;
   } else if (deviationScore > 15) {
     riskScore += 15;
   }
 
-  // Convert score to risk assessment
   if (riskScore >= 70) {
     return 'High Risk';
   } else if (riskScore >= 40) {
@@ -306,12 +295,11 @@ export function determineRiskAssessment(
 }
 
 /**
- * Calculate fixation on face percentage
+ * Calculate fixation on target percentage
  */
 export function calculateFixationPercentage(eyeData: Point[], targetData: Point[]): number {
   if (eyeData.length === 0 || targetData.length === 0) return 0;
 
-  // Interpolate target data to match eye data length if needed
   const interpolatedTargets: Point[] = [];
   if (targetData.length !== eyeData.length) {
     for (let i = 0; i < eyeData.length; i++) {
@@ -346,7 +334,6 @@ export function analyzeEyeMovementData(
     throw new Error('Insufficient data for analysis');
   }
 
-  // Process and extract metrics
   const { durations: fixationDurations } = identifyFixations(eyePositions, timestamps);
   const { durations: saccadeDurations } = identifySaccades(eyePositions, timestamps);
 
@@ -362,7 +349,7 @@ export function analyzeEyeMovementData(
     avgFixationDuration,
     wiggleScore,
     deviationScore
-  ) as string;
+  );
 
   return {
     saccadeFrequency,

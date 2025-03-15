@@ -5,11 +5,9 @@ import Webcam from 'react-webcam';
 import { useEyeTrackingStore } from '../store';
 import { Point } from '../AnimatedBall';
 import * as tf from '@tensorflow/tfjs';
-// Explicitly import backends to ensure they're available
 import '@tensorflow/tfjs-backend-webgl';
 import '@tensorflow/tfjs-backend-cpu';
 
-// Define types we need for our component
 interface Keypoint {
   x: number;
   y: number;
@@ -28,7 +26,6 @@ interface FacePrediction {
   };
 }
 
-// BlazeFace specific types
 interface BlazeFacePrediction {
   topLeft: [number, number];
   bottomRight: [number, number];
@@ -36,7 +33,6 @@ interface BlazeFacePrediction {
   probability: number;
 }
 
-// Define a simplified type for the detector
 interface FaceLandmarksDetector {
   estimateFaces: (image: HTMLVideoElement | HTMLImageElement) => Promise<FacePrediction[]>;
 }
@@ -59,65 +55,47 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
   const [isModelLoading, setIsModelLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detector, setDetector] = useState<FaceLandmarksDetector | null>(null);
+  const [isCameraReadyLogged, setIsCameraReadyLogged] = useState(false); // Track if logged
 
-  // Access the store state and actions
   const {
     setIsCameraReady,
     setEyeDetected,
     testPhase: currentTestPhase,
     addGazePoint,
+    eyeDetected, // Access current eyeDetected state
   } = useEyeTrackingStore();
 
   const loadModels = useCallback(async () => {
     try {
-      // Initialize TensorFlow.js with WebGL backend
       await tf.setBackend('webgl');
       console.log('Using TensorFlow.js backend:', tf.getBackend());
       await tf.ready();
       console.log('TensorFlow.js is ready');
 
-      // Load the blazeface model which is more reliable
       console.log('Loading blazeface model...');
       const blazeFace = await import('@tensorflow-models/blazeface');
-
-      // Load the BlazeFace model
       console.log('Loading BlazeFace model...');
       const model = await blazeFace.load();
       console.log('BlazeFace model loaded successfully');
 
-      // Create a wrapper to make the BlazeFace model compatible with our interface
       const blazeFaceDetector: FaceLandmarksDetector = {
         estimateFaces: async (image) => {
-          // Detect faces using BlazeFace
           const predictions = (await model.estimateFaces(image, false)) as BlazeFacePrediction[];
-
-          // Convert BlazeFace predictions to our expected format
           return predictions.map((pred: BlazeFacePrediction) => {
-            // Extract landmarks - BlazeFace provides 6 keypoints:
-            // 2 eyes, 2 ears, nose, and mouth
             const keypoints = [
-              // Left eye
-              { x: pred.landmarks[0][0], y: pred.landmarks[0][1], z: 0 },
-              // Right eye
-              { x: pred.landmarks[1][0], y: pred.landmarks[1][1], z: 0 },
-              // Nose
-              { x: pred.landmarks[2][0], y: pred.landmarks[2][1], z: 0 },
-              // Mouth
-              { x: pred.landmarks[3][0], y: pred.landmarks[3][1], z: 0 },
-              // Left ear
-              { x: pred.landmarks[4][0], y: pred.landmarks[4][1], z: 0 },
-              // Right ear
-              { x: pred.landmarks[5][0], y: pred.landmarks[5][1], z: 0 },
+              { x: pred.landmarks[0][0], y: pred.landmarks[0][1], z: 0 }, // Left eye
+              { x: pred.landmarks[1][0], y: pred.landmarks[1][1], z: 0 }, // Right eye
+              { x: pred.landmarks[2][0], y: pred.landmarks[2][1], z: 0 }, // Nose
+              { x: pred.landmarks[3][0], y: pred.landmarks[3][1], z: 0 }, // Mouth
+              { x: pred.landmarks[4][0], y: pred.landmarks[4][1], z: 0 }, // Left ear
+              { x: pred.landmarks[5][0], y: pred.landmarks[5][1], z: 0 }, // Right ear
             ];
 
-            // Add boundary points around eyes (more detailed eye contour)
             const leftEyeX = pred.landmarks[0][0];
             const leftEyeY = pred.landmarks[0][1];
             const rightEyeX = pred.landmarks[1][0];
             const rightEyeY = pred.landmarks[1][1];
 
-            // Add 8 points around each eye
-            // Left eye
             for (let i = 0; i < 8; i++) {
               const angle = (i / 8) * 2 * Math.PI;
               const radius = 10;
@@ -126,12 +104,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
                 y: leftEyeY + radius * Math.sin(angle),
                 z: 0,
               });
-            }
-
-            // Right eye
-            for (let i = 0; i < 8; i++) {
-              const angle = (i / 8) * 2 * Math.PI;
-              const radius = 10;
               keypoints.push({
                 x: rightEyeX + radius * Math.cos(angle),
                 y: rightEyeY + radius * Math.sin(angle),
@@ -154,7 +126,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
         },
       };
 
-      // Set the detector
       setDetector(blazeFaceDetector);
       setIsModelLoading(false);
       console.log('Face detector ready');
@@ -169,174 +140,146 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
   }, []);
 
   const detect = useCallback(async () => {
-    if (!detector) return;
+    if (!detector || !webcamRef.current?.video || webcamRef.current.video.readyState !== 4) {
+      return;
+    }
 
-    if (
-      typeof webcamRef.current !== 'undefined' &&
-      webcamRef.current !== null &&
-      webcamRef.current.video &&
-      webcamRef.current.video.readyState === 4
-    ) {
-      try {
-        // Get Video Properties
-        const video = webcamRef.current.video;
-        const videoWidth = video.videoWidth;
-        const videoHeight = video.videoHeight;
+    try {
+      const video = webcamRef.current.video;
+      const videoWidth = video.videoWidth;
+      const videoHeight = video.videoHeight;
 
-        // Make sure we have valid dimensions
-        if (videoWidth === 0 || videoHeight === 0) {
-          console.log('Invalid video dimensions, skipping detection');
-          return;
-        }
-
-        // Set canvas dimensions to match video source
-        if (canvasRef.current) {
-          canvasRef.current.width = videoWidth;
-          canvasRef.current.height = videoHeight;
-        }
-
-        // Make Detections
-        const faces = await detector.estimateFaces(video);
-        const eyesDetected = faces.length > 0;
-
-        // Update store and notify parent component if needed
-        setEyeDetected(eyesDetected);
-        if (onEyeDetected) {
-          onEyeDetected(eyesDetected);
-        }
-
-        // If we have faces, calculate gaze position and draw
-        if (faces.length > 0 && canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
-          if (!ctx) return;
-
-          // Clear the canvas
-          ctx.clearRect(0, 0, videoWidth, videoHeight);
-
-          // Calculate gaze position
-          const face = faces[0];
-
-          // Original eye positions
-          const origLeftEye = face.keypoints[0];
-          const origRightEye = face.keypoints[1];
-
-          // Mirror the x coordinates for drawing since video is mirrored
-          // but detection runs on unmirrored data
-          const leftEye = {
-            x: videoWidth - origLeftEye.x, // Mirror the x coordinate
-            y: origLeftEye.y,
-          };
-
-          const rightEye = {
-            x: videoWidth - origRightEye.x, // Mirror the x coordinate
-            y: origRightEye.y,
-          };
-
-          // Center point between eyes (mirrored)
-          const eyeCenterX = (leftEye.x + rightEye.x) / 2;
-          const eyeCenterY = (leftEye.y + rightEye.y) / 2;
-
-          // Convert to percentage of screen
-          const gazeX = (eyeCenterX / videoWidth) * 100;
-          const gazeY = (eyeCenterY / videoHeight) * 100;
-
-          // Create gaze point
-          const gazePoint: Point = {
-            x: Math.min(Math.max(gazeX, 0), 100),
-            y: Math.min(Math.max(gazeY, 0), 100),
-          };
-
-          // Use phase prop here when adding gaze points
-          if (onGazeData) {
-            onGazeData(gazePoint);
-          }
-
-          // Add to store if in testing phase (use component phase prop here)
-          if (currentTestPhase === 'testing' || phase === 'testing') {
-            addGazePoint(gazePoint);
-          }
-
-          // Set line width and style
-          ctx.lineWidth = 2;
-
-          // Draw eye circles with larger radius for better visibility
-          // Left eye
-          ctx.beginPath();
-          ctx.arc(leftEye.x, leftEye.y, 8, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
-          ctx.stroke();
-
-          // Right eye
-          ctx.beginPath();
-          ctx.arc(rightEye.x, rightEye.y, 8, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
-          ctx.stroke();
-
-          // Draw line between eyes
-          ctx.beginPath();
-          ctx.moveTo(leftEye.x, leftEye.y);
-          ctx.lineTo(rightEye.x, rightEye.y);
-          ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Draw center point between eyes
-          ctx.beginPath();
-          ctx.arc(eyeCenterX, eyeCenterY, 5, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 0, 1)';
-          ctx.stroke();
-
-          // Show coordinates in smaller text
-          ctx.font = '12px Arial';
-          ctx.fillStyle = 'white';
-          ctx.fillText(
-            `Center: (${Math.round(gazeX)}%, ${Math.round(gazeY)}%)`,
-            10,
-            videoHeight - 10
-          );
-        } else if (canvasRef.current) {
-          // Clear the canvas if no faces
-          const ctx = canvasRef.current.getContext('2d');
-          if (ctx) {
-            ctx.clearRect(0, 0, videoWidth, videoHeight);
-          }
-        }
-      } catch (err) {
-        console.error('Error in detection:', err);
+      if (videoWidth === 0 || videoHeight === 0) {
+        console.log('Invalid video dimensions, skipping detection');
+        return;
       }
+
+      if (canvasRef.current) {
+        canvasRef.current.width = videoWidth;
+        canvasRef.current.height = videoHeight;
+      }
+
+      const faces = await detector.estimateFaces(video);
+      const eyesDetectedNow = faces.length > 0;
+
+      setEyeDetected(eyesDetectedNow);
+      if (onEyeDetected) {
+        onEyeDetected(eyesDetectedNow);
+      }
+
+      if (eyesDetectedNow && !isCameraReadyLogged) {
+        setIsCameraReady(true);
+        console.log('Camera is ready'); // Log only once when eyes are first detected
+        setIsCameraReadyLogged(true);
+      }
+
+      if (faces.length > 0 && canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, videoWidth, videoHeight);
+
+        const face = faces[0];
+        const origLeftEye = face.keypoints[0];
+        const origRightEye = face.keypoints[1];
+
+        const leftEye = {
+          x: videoWidth - origLeftEye.x,
+          y: origLeftEye.y,
+        };
+        const rightEye = {
+          x: videoWidth - origRightEye.x,
+          y: origRightEye.y,
+        };
+
+        const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+        const eyeCenterY = (leftEye.y + rightEye.y) / 2;
+
+        const gazeX = (eyeCenterX / videoWidth) * 100;
+        const gazeY = (eyeCenterY / videoHeight) * 100;
+
+        const gazePoint: Point = {
+          x: Math.min(Math.max(gazeX, 0), 100),
+          y: Math.min(Math.max(gazeY, 0), 100),
+        };
+
+        if (onGazeData) {
+          onGazeData(gazePoint);
+        }
+
+        if (currentTestPhase === 'testing' || phase === 'testing') {
+          addGazePoint(gazePoint);
+        }
+
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        ctx.arc(leftEye.x, leftEye.y, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(rightEye.x, rightEye.y, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(leftEye.x, leftEye.y);
+        ctx.lineTo(rightEye.x, rightEye.y);
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(eyeCenterX, eyeCenterY, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 0, 1)';
+        ctx.stroke();
+
+        ctx.font = '12px Arial';
+        ctx.fillStyle = 'white';
+        ctx.fillText(
+          `Center: (${Math.round(gazeX)}%, ${Math.round(gazeY)}%)`,
+          10,
+          videoHeight - 10
+        );
+      } else if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, videoWidth, videoHeight);
+        }
+      }
+    } catch (err) {
+      console.error('Error in detection:', err);
     }
   }, [
     detector,
-    webcamRef,
-    canvasRef,
-    setEyeDetected,
     onEyeDetected,
     onGazeData,
     currentTestPhase,
     addGazePoint,
     phase,
+    setEyeDetected,
+    setIsCameraReady,
+    isCameraReadyLogged,
   ]);
 
-  // Initialize the models on mount
   useEffect(() => {
-    // Only load models in the browser
     if (typeof window !== 'undefined') {
       loadModels();
     }
-
-    return () => {
-      // Cleanup
-    };
   }, [loadModels]);
 
-  // Handle webcam ready state
+  // Check webcam readiness only until eyes are detected
   useEffect(() => {
+    if (eyeDetected && isCameraReadyLogged) {
+      return; // Stop checking if eyes are detected and camera readiness is logged
+    }
+
     const checkWebcam = () => {
       if (
         webcamRef.current &&
@@ -344,24 +287,19 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
         webcamRef.current.video.readyState === 4
       ) {
         setIsCameraReady(true);
-        console.log('Camera is ready');
       } else {
         setIsCameraReady(false);
       }
     };
 
-    // Initial check
     checkWebcam();
-
-    // Set up interval to check periodically
     const interval = setInterval(checkWebcam, 1000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [setIsCameraReady]);
+  }, [setIsCameraReady, eyeDetected, isCameraReadyLogged]);
 
-  // Set up the detection loop if detector is available
   useEffect(() => {
     if (!detector) return;
 
@@ -374,7 +312,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
     };
   }, [detector, detect]);
 
-  // Default container style that works well for both phases
   const defaultContainerStyle: React.CSSProperties = {
     width: '100%',
     height: '100%',
@@ -384,7 +321,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
     backgroundColor: '#000',
   };
 
-  // Error message styling
   const errorStyle = {
     position: 'absolute' as const,
     top: '50%',
