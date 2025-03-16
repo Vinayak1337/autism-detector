@@ -59,7 +59,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
 
   const {
     setIsCameraReady,
-    setEyeDetected,
     testPhase: currentTestPhase,
     addGazePoint,
     eyeDetected, // Access current eyeDetected state
@@ -162,7 +161,9 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
       const faces = await detector.estimateFaces(video);
       const eyesDetectedNow = faces.length > 0;
 
-      setEyeDetected(eyesDetectedNow);
+      // Use the immediate version to update eye detection state without any debouncing
+      useEyeTrackingStore.getState().setEyeDetectedImmediate(eyesDetectedNow);
+
       if (onEyeDetected) {
         onEyeDetected(eyesDetectedNow);
       }
@@ -192,13 +193,41 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
           y: origRightEye.y,
         };
 
+        // Track left and right eyes separately
+        const leftGazeX = (leftEye.x / videoWidth) * 100;
+        const leftGazeY = (leftEye.y / videoHeight) * 100;
+        const leftGazePoint = {
+          x: Math.min(Math.max(leftGazeX, 0), 100),
+          y: Math.min(Math.max(leftGazeY, 0), 100),
+        };
+
+        const rightGazeX = (rightEye.x / videoWidth) * 100;
+        const rightGazeY = (rightEye.y / videoHeight) * 100;
+        const rightGazePoint = {
+          x: Math.min(Math.max(rightGazeX, 0), 100),
+          y: Math.min(Math.max(rightGazeY, 0), 100),
+        };
+
+        // Check if both eyes are making the expected movement pattern
+        // Calculate eye distance to determine if both eyes are moving together
+        const eyeDistance = Math.sqrt(
+          Math.pow(rightGazePoint.x - leftGazePoint.x, 2) +
+            Math.pow(rightGazePoint.y - leftGazePoint.y, 2)
+        );
+
+        // Log extreme eye distance that might indicate tracking issues
+        if (eyeDistance > 30) {
+          console.log('Potential tracking issue: Large eye distance detected', eyeDistance);
+        }
+
+        // Use the average of both eyes for the gaze point
         const eyeCenterX = (leftEye.x + rightEye.x) / 2;
         const eyeCenterY = (leftEye.y + rightEye.y) / 2;
 
         const gazeX = (eyeCenterX / videoWidth) * 100;
         const gazeY = (eyeCenterY / videoHeight) * 100;
 
-        const gazePoint: Point = {
+        const gazePoint = {
           x: Math.min(Math.max(gazeX, 0), 100),
           y: Math.min(Math.max(gazeY, 0), 100),
         };
@@ -213,6 +242,7 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
 
         ctx.lineWidth = 2;
 
+        // Draw left eye more visibly
         ctx.beginPath();
         ctx.arc(leftEye.x, leftEye.y, 8, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
@@ -220,6 +250,7 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
         ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
         ctx.stroke();
 
+        // Draw right eye more visibly
         ctx.beginPath();
         ctx.arc(rightEye.x, rightEye.y, 8, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(0, 255, 255, 0.6)';
@@ -227,12 +258,14 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
         ctx.strokeStyle = 'rgba(0, 255, 255, 1)';
         ctx.stroke();
 
+        // Connect the eyes with a line
         ctx.beginPath();
         ctx.moveTo(leftEye.x, leftEye.y);
         ctx.lineTo(rightEye.x, rightEye.y);
         ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
         ctx.stroke();
 
+        // Draw the center eye position
         ctx.beginPath();
         ctx.arc(eyeCenterX, eyeCenterY, 5, 0, 2 * Math.PI);
         ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
@@ -240,12 +273,23 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
         ctx.strokeStyle = 'rgba(255, 255, 0, 1)';
         ctx.stroke();
 
+        // Display eye tracking information
         ctx.font = '12px Arial';
         ctx.fillStyle = 'white';
         ctx.fillText(
           `Center: (${Math.round(gazeX)}%, ${Math.round(gazeY)}%)`,
           10,
-          videoHeight - 10
+          videoHeight - 30
+        );
+        ctx.fillText(
+          `Left Eye: (${Math.round(leftGazeX)}%, ${Math.round(leftGazeY)}%)`,
+          10,
+          videoHeight - 15
+        );
+        ctx.fillText(
+          `Right Eye: (${Math.round(rightGazeX)}%, ${Math.round(rightGazeY)}%)`,
+          10,
+          videoHeight - 0
         );
       } else if (canvasRef.current) {
         const ctx = canvasRef.current.getContext('2d');
@@ -263,7 +307,6 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
     currentTestPhase,
     addGazePoint,
     phase,
-    setEyeDetected,
     setIsCameraReady,
     isCameraReadyLogged,
   ]);
@@ -300,12 +343,13 @@ export const WebcamFeed: React.FC<WebcamFeedProps> = ({
     };
   }, [setIsCameraReady, eyeDetected, isCameraReadyLogged]);
 
+  // Run detection more frequently for better responsiveness
   useEffect(() => {
     if (!detector) return;
 
     const detectionInterval = setInterval(() => {
       detect();
-    }, 100);
+    }, 33); // Reduced from 50ms to 33ms (approximately 30fps) for more responsive updates
 
     return () => {
       clearInterval(detectionInterval);

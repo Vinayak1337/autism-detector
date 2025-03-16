@@ -4,6 +4,7 @@ import React from 'react';
 import { AnalysisResult } from '../store';
 import { EyeTrackingVisualizer } from './EyeTrackingVisualizer';
 import { Point } from '../AnimatedBall';
+import { EyePathCanvas } from './EyePathCanvas';
 
 interface ResultsPhaseProps {
   results: AnalysisResult;
@@ -43,32 +44,65 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
   const getSuggestions = (results: AnalysisResult) => {
     const suggestions = [];
 
-    if (results.saccadeFrequency > 2.5) {
+    // Calculate accuracy percentage based on wiggle score
+    const trackingAccuracy = Math.max(0, 100 - results.wiggleScore * 100);
+
+    // Provide feedback based on tracking accuracy
+    if (trackingAccuracy >= 80) {
       suggestions.push(
-        'Your eye movements showed rapid shifting between points. This may indicate difficulty maintaining focus.'
+        'Your eye movements are perfectly normal with excellent tracking accuracy. Your eyes followed the target smoothly with minimal deviations.'
+      );
+    } else if (trackingAccuracy > 60) {
+      suggestions.push(
+        'Your eye movements show good tracking ability with no concerning patterns. You maintained consistent focus on the target throughout most of the test.'
+      );
+    } else if (trackingAccuracy >= 55) {
+      suggestions.push(
+        'Your eye movements showed moderate unsteadiness while tracking. This might indicate minor challenges with smooth visual tracking, but is within a range that may not be significant.'
+      );
+    } else {
+      suggestions.push(
+        'Your eye movements showed significant unsteadiness while tracking. This may indicate challenges with smooth visual pursuit that could benefit from further assessment.'
       );
     }
 
-    if (results.averageFixationDuration < 200) {
+    // Additional information about square pattern tracking
+    if (!results.isSquarePattern) {
       suggestions.push(
-        'Your fixation durations were shorter than average, which could suggest difficulty sustaining attention.'
+        'Your eyes did not consistently follow the square pattern. This could indicate challenges with visual tracking or sustained attention.'
+      );
+    } else if (trackingAccuracy < 70) {
+      suggestions.push(
+        'While you followed the general square pattern, there were some deviations in the corners. This is common and typically not concerning unless accompanied by other symptoms.'
       );
     }
 
-    if (results.wiggleScore > 0.7) {
-      suggestions.push(
-        'Your eye movements showed higher variability, which may indicate challenges with smooth tracking.'
-      );
+    // Additional metrics info only if accuracy is below threshold
+    if (trackingAccuracy < 60) {
+      if (results.saccadeFrequency > 2.5) {
+        suggestions.push(
+          'Your eye movements showed rapid shifts (saccades) between points. This may indicate difficulty maintaining steady focus.'
+        );
+      }
+
+      if (results.averageFixationDuration < 200) {
+        suggestions.push(
+          'Your fixation durations were shorter than average, which could suggest difficulty sustaining attention on specific points.'
+        );
+      }
+
+      if (results.deviationScore > 0.6) {
+        suggestions.push(
+          'Your gaze tended to deviate from the target significantly, which could indicate processing differences.'
+        );
+      }
     }
 
-    if (results.deviationScore > 0.6) {
+    // For perfect or near-perfect tracking
+    if (trackingAccuracy >= 90) {
       suggestions.push(
-        'Your gaze tended to deviate from the target more than average, which could indicate processing differences.'
+        'Your tracking performance is excellent, indicating very well-developed visual tracking skills.'
       );
-    }
-
-    if (suggestions.length === 0) {
-      suggestions.push('Your eye movement patterns appear to be within typical ranges.');
     }
 
     return suggestions;
@@ -92,11 +126,71 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
             <div>
               <div className="space-y-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-500">Risk Assessment</p>
+                  <p className="text-sm font-medium text-gray-500">Eye Tracking Assessment</p>
                   <p
                     className={`mt-1 px-3 py-1 rounded-full inline-block font-medium ${getRiskLevelClass(results.riskAssessment)}`}
                   >
-                    {results.riskAssessment} Risk
+                    {results.riskAssessment === 'Low'
+                      ? 'Normal Eye Tracking'
+                      : `${results.riskAssessment} Risk`}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {Math.max(0, 100 - results.wiggleScore * 100).toFixed(0)}% tracking accuracy
+                    {results.riskAssessment === 'Low' &&
+                      Math.max(0, 100 - results.wiggleScore * 100) >= 80 && (
+                        <span className="ml-1 font-medium text-green-600">- Perfectly Normal</span>
+                      )}
+                    {results.riskAssessment === 'Low' &&
+                      Math.max(0, 100 - results.wiggleScore * 100) > 60 &&
+                      Math.max(0, 100 - results.wiggleScore * 100) < 80 && (
+                        <span className="ml-1 font-medium text-blue-600">- Good Tracking</span>
+                      )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Square Pattern Detection</p>
+                  <p
+                    className={`mt-1 px-3 py-1 rounded-full inline-block font-medium ${
+                      results.isSquarePattern
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}
+                  >
+                    {results.isSquarePattern
+                      ? 'Square Pattern Detected'
+                      : 'Pattern Not Fully Detected'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {results.isSquarePattern
+                      ? 'Eyes followed the square pattern successfully'
+                      : 'Eyes had difficulty following the complete square pattern'}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Tracking Accuracy</p>
+                  <p
+                    className={`mt-1 px-3 py-1 rounded-full inline-block font-medium ${
+                      results.wiggleScore * 100 <= 20
+                        ? 'bg-green-100 text-green-800'
+                        : results.wiggleScore * 100 < 40
+                          ? 'bg-blue-100 text-blue-700'
+                          : results.wiggleScore * 100 <= 45
+                            ? 'bg-yellow-100 text-yellow-700'
+                            : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {results.wiggleScore * 100 <= 20
+                      ? 'Excellent Tracking (80%+)'
+                      : results.wiggleScore * 100 < 40
+                        ? 'Good Tracking (60%+)'
+                        : results.wiggleScore * 100 <= 45
+                          ? 'Moderate Tracking (55-60%)'
+                          : 'Tracking Needs Improvement (<55%)'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Accuracy: {(100 - results.wiggleScore * 100).toFixed(0)}%
                   </p>
                 </div>
 
@@ -146,6 +240,17 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
                 showHeatmap={true}
                 showTrail={true}
               />
+
+              {/* Add canvas for showing eye path comparison */}
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-500 mb-2">Eye Path Analysis</p>
+                <EyePathCanvas
+                  gazeData={gazeData}
+                  isSquarePattern={results.isSquarePattern}
+                  width={280}
+                  height={200}
+                />
+              </div>
             </div>
           </div>
         </div>

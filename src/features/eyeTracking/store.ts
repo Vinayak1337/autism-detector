@@ -17,6 +17,7 @@ export interface AnalysisResult {
   riskAssessment: string;
   testDate: Date;
   fixationPercentage: number;
+  isSquarePattern: boolean;
 }
 
 // Define the store's state
@@ -41,6 +42,7 @@ export interface EyeTrackingState {
   setIsModelLoading: (loading: boolean) => void;
   setIsCameraReady: (isReady: boolean) => void;
   setEyeDetected: (detected: boolean) => void;
+  setEyeDetectedImmediate: (detected: boolean) => void;
   setTestPhase: (phase: TestPhase) => void;
   setGazeData: (data: Point[]) => void;
   addGazePoint: (point: Point) => void;
@@ -59,7 +61,7 @@ export const useEyeTrackingStore = create<EyeTrackingState>()(
       const setEyeDetectedDebounced = debounce((detected: boolean) => {
         console.log('eyesDetected set to:', detected);
         set({ eyeDetected: detected });
-      }, 500); // 500ms debounce delay
+      }, 100); // Reduced from 500ms to 100ms for faster response
 
       return {
         // Camera and model status
@@ -84,6 +86,12 @@ export const useEyeTrackingStore = create<EyeTrackingState>()(
         setIsCameraReady: (isReady) => set({ isCameraReady: isReady }),
 
         setEyeDetected: (detected) => setEyeDetectedDebounced(detected), // Use debounced version
+
+        // New non-debounced version for immediate updates
+        setEyeDetectedImmediate: (detected) => {
+          console.log('eyesDetected immediately set to:', detected);
+          set({ eyeDetected: detected });
+        },
 
         setTestPhase: (phase) => {
           console.log('testPhase set to:', phase);

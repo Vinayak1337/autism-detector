@@ -1,8 +1,25 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { EyeTrackingOptions } from '../useEyeTracking';
 import { Point } from '../AnimatedBall';
+
+/**
+ * Configuration options for eye tracking visualization and behavior
+ */
+export interface EyeTrackingOptions {
+  /** Whether to draw eye landmarks on the canvas */
+  drawLandmarks?: boolean;
+  /** Whether to draw the gaze path on the canvas */
+  drawPath?: boolean;
+  /** Color of the gaze path */
+  pathColor?: string;
+  /** Maximum number of points to keep in the gaze path history */
+  pathLength?: number;
+  /** Color of eye landmarks */
+  landmarkColor?: string;
+  /** Callback triggered when gaze position changes */
+  onGazeMove?: (x: number, y: number) => void;
+}
 
 interface UseTrackingManagerProps {
   isTracking: boolean;

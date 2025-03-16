@@ -9,9 +9,9 @@ export interface Point {
   y: number;
 }
 
-const MOVEMENT_DURATION = 10000;
-const SQUARE_SIZE = 60;
-const POSITION_UPDATE_THROTTLE_MS = 100;
+const MOVEMENT_DURATION = 30000;
+const SQUARE_SIZE = 80;
+const POSITION_UPDATE_THROTTLE_MS = 50;
 
 interface AnimatedBallProps {
   onComplete?: () => void;
@@ -27,8 +27,8 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   onPositionUpdate,
   size = 30,
   color = '#4F46E5',
-  showPath = true,
-  showLabels = true,
+  showPath = false,
+  showLabels = false,
 }) => {
   const testPhase = useEyeTrackingStore((state) => state.testPhase);
   const endTest = useEyeTrackingStore((state) => state.endTest);
@@ -61,17 +61,22 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
       console.warn('Container dimensions not ready:', containerWidth, containerHeight);
       return [];
     }
-    const squareWidth = (containerWidth * SQUARE_SIZE) / 100;
-    const squareHeight = (containerHeight * SQUARE_SIZE) / 100;
-    const offsetX = (containerWidth - squareWidth) / 2;
-    const offsetY = (containerHeight - squareHeight) / 2;
+
+    // Calculate dimensions for a proper square (not diagonal)
+    const squareSize = Math.min(containerWidth, containerHeight) * (SQUARE_SIZE / 100);
+    const centerX = containerWidth / 2;
+    const centerY = containerHeight / 2;
+    const halfSize = squareSize / 2;
+
+    // Create points in a true square pattern (left, top, right, bottom, back to left)
     const points = [
-      { x: offsetX, y: offsetY + squareHeight / 2 },
-      { x: offsetX + squareWidth / 2, y: offsetY + squareHeight },
-      { x: offsetX + squareWidth, y: offsetY + squareHeight / 2 },
-      { x: offsetX + squareWidth / 2, y: offsetY },
-      { x: offsetX, y: offsetY + squareHeight / 2 },
+      { x: centerX - halfSize, y: centerY }, // Left
+      { x: centerX, y: centerY - halfSize }, // Top
+      { x: centerX + halfSize, y: centerY }, // Right
+      { x: centerX, y: centerY + halfSize }, // Bottom
+      { x: centerX - halfSize, y: centerY }, // Back to left to complete the square
     ];
+
     console.log('Calculated squarePoints:', points);
     return points;
   }, []);
@@ -120,7 +125,12 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
       }
 
       const squarePoints = calculateSquarePoints();
-      console.log('squarePoints length:', squarePoints.length, 'ballRef exists:', !!ballRef.current);
+      console.log(
+        'squarePoints length:',
+        squarePoints.length,
+        'ballRef exists:',
+        !!ballRef.current
+      );
       if (!ballRef.current || squarePoints.length === 0) {
         console.warn('Cannot animate: ballRef or squarePoints missing');
         requestRef.current = requestAnimationFrame(animate);
@@ -170,7 +180,11 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   );
 
   useEffect(() => {
-    console.log('useEffect triggered:', { testPhase, eyesDetected, isAnimating: isAnimatingRef.current });
+    console.log('useEffect triggered:', {
+      testPhase,
+      eyesDetected,
+      isAnimating: isAnimatingRef.current,
+    });
     const squarePoints = calculateSquarePoints();
     const now = performance.now();
 
@@ -222,24 +236,78 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
         console.error('Analysis Error:', error);
       }
     }
-  }, [isAnimatingRef.current, progressRef.current, eyePositions, targetPositions, timestamps]);
+  }, [eyePositions, targetPositions, timestamps]);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full" style={{ visibility: testPhase === 'testing' && eyesDetected ? 'visible' : 'hidden' }}>
+    <div
+      ref={containerRef}
+      className="relative w-full h-full"
+      style={{ visibility: testPhase === 'testing' && eyesDetected ? 'visible' : 'hidden' }}
+    >
       {showPath && calculateSquarePoints().length > 0 && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          <path d={`M ${calculateSquarePoints().map((p) => `${p.x},${p.y}`).join(' L ')}`} stroke="#CBD5E1" strokeWidth="2" strokeDasharray="6 4" fill="none" />
+          <path
+            d={`M ${calculateSquarePoints()
+              .map((p) => `${p.x},${p.y}`)
+              .join(' L ')}`}
+            stroke="#CBD5E1"
+            strokeWidth="2"
+            strokeDasharray="6 4"
+            fill="none"
+          />
         </svg>
       )}
       {showLabels && calculateSquarePoints().length > 0 && (
         <>
-          <div style={{ left: calculateSquarePoints()[0].x - 60, top: calculateSquarePoints()[0].y - 10 }} className="absolute text-sm font-bold text-gray-600">Left</div>
-          <div style={{ left: calculateSquarePoints()[1].x - 16, top: calculateSquarePoints()[1].y + 10 }} className="absolute text-sm font-bold text-gray-600">Bottom</div>
-          <div style={{ left: calculateSquarePoints()[2].x + 10, top: calculateSquarePoints()[2].y - 10 }} className="absolute text-sm font-bold text-gray-600">Right</div>
-          <div style={{ left: calculateSquarePoints()[3].x - 12, top: calculateSquarePoints()[3].y - 30 }} className="absolute text-sm font-bold text-gray-600">Top</div>
+          <div
+            style={{
+              left: calculateSquarePoints()[0].x - 60,
+              top: calculateSquarePoints()[0].y - 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Left
+          </div>
+          <div
+            style={{
+              left: calculateSquarePoints()[1].x - 16,
+              top: calculateSquarePoints()[1].y - 30,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Top
+          </div>
+          <div
+            style={{
+              left: calculateSquarePoints()[2].x + 10,
+              top: calculateSquarePoints()[2].y - 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Right
+          </div>
+          <div
+            style={{
+              left: calculateSquarePoints()[3].x - 16,
+              top: calculateSquarePoints()[3].y + 10,
+            }}
+            className="absolute text-sm font-bold text-gray-600"
+          >
+            Bottom
+          </div>
         </>
       )}
-      <div ref={ballRef} style={{ width: `${size}px`, height: `${size}px`, borderRadius: '50%', backgroundColor: color, position: 'absolute', transition: 'transform 0.1s linear' }} />
+      <div
+        ref={ballRef}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          borderRadius: '50%',
+          backgroundColor: color,
+          position: 'absolute',
+          transition: 'transform 0.1s linear',
+        }}
+      />
     </div>
   );
 };

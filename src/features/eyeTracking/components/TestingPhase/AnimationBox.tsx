@@ -18,7 +18,7 @@ export const AnimationBox: React.FC<AnimationBoxProps> = ({
   onPositionUpdate,
   lastPosition,
   forwardedRef,
-})  => {
+}) => {
   const startTest = useEyeTrackingStore((state: { startTest: () => void }) => state.startTest);
 
   useEffect(() => {
@@ -30,13 +30,12 @@ export const AnimationBox: React.FC<AnimationBoxProps> = ({
       className="flex-grow relative border-2 border-gray-300 rounded-lg mx-4 my-4 overflow-hidden"
       style={{ height: '400px', background: 'white' }}
     >
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 rotate-45">
         <AnimatedBall
           onComplete={onComplete}
           onPositionUpdate={onPositionUpdate}
           size={36}
-          showPath={true}
-          showLabels={true}
+          showPath
         />
       </div>
 
