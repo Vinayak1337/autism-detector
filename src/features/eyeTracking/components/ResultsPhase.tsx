@@ -43,6 +43,12 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
   const getSuggestions = (results: AnalysisResult) => {
     const suggestions = [];
 
+    if (!results.isSquarePattern) {
+      suggestions.push(
+        'Your eye movements did not follow the square pattern consistently. This could indicate challenges with visual tracking or sustained attention.'
+      );
+    }
+
     if (results.saccadeFrequency > 2.5) {
       suggestions.push(
         'Your eye movements showed rapid shifting between points. This may indicate difficulty maintaining focus.'
@@ -97,6 +103,21 @@ export const ResultsPhase: React.FC<ResultsPhaseProps> = ({
                     className={`mt-1 px-3 py-1 rounded-full inline-block font-medium ${getRiskLevelClass(results.riskAssessment)}`}
                   >
                     {results.riskAssessment} Risk
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Square Pattern Detection</p>
+                  <p
+                    className={`mt-1 px-3 py-1 rounded-full inline-block font-medium ${
+                      results.isSquarePattern
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {results.isSquarePattern
+                      ? 'Square Pattern Detected'
+                      : 'Irregular Pattern Detected'}
                   </p>
                 </div>
 
