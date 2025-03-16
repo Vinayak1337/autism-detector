@@ -1,10 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AnimatedBall, Point } from '@/features/eyeTracking/AnimatedBall';
-import { EyeTrackingComponent } from '@/features/eyeTracking/EyeTrackingComponent';
-import { useEyeTrackingStore } from '@/features/eyeTracking/store';
 import Link from 'next/link';
+import { Point } from '@/features/eyeTracking/AnimatedBall';
+import { AnimatedBall, EyeTrackingComponent } from '@/features/eyeTracking';
+import { useEyeTrackingStore } from '@/features/eyeTracking/store';
+
+// Add window interface declaration at the top of the file
+declare global {
+  interface Window {
+    _useDummyDetector?: boolean;
+  }
+}
 
 const SquareAnimationTest: React.FC = () => {
   const { isCameraReady, eyeDetected, gazeData } = useEyeTrackingStore();

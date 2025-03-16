@@ -10,8 +10,8 @@ export interface Point {
 }
 
 const MOVEMENT_DURATION = 30000;
-const SQUARE_SIZE = 60;
-const POSITION_UPDATE_THROTTLE_MS = 100;
+const SQUARE_SIZE = 80;
+const POSITION_UPDATE_THROTTLE_MS = 50;
 
 interface AnimatedBallProps {
   onComplete?: () => void;
@@ -27,8 +27,8 @@ export const AnimatedBall: React.FC<AnimatedBallProps> = ({
   onPositionUpdate,
   size = 30,
   color = '#4F46E5',
-  showPath = true,
-  showLabels = true,
+  showPath = false,
+  showLabels = false,
 }) => {
   const testPhase = useEyeTrackingStore((state) => state.testPhase);
   const endTest = useEyeTrackingStore((state) => state.endTest);

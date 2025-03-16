@@ -180,47 +180,99 @@ export function calculateAverageFixationDuration(fixationDurations: number[]): n
 
 /**
  * Calculate a "wiggle" score based on unwanted vertical/horizontal movements
+ * Returns a value between 0-1 (0 = perfect tracking, 1 = poor tracking)
  */
 export function calculateWiggleScore(eyeData: Point[], targetData: Point[]): number {
-  if (eyeData.length === 0 || targetData.length === 0) return 0;
+  // Input validation
+  if (!eyeData || !targetData || eyeData.length === 0 || targetData.length === 0) {
+    console.warn('Invalid eye or target data provided to calculateWiggleScore');
+    return 0;
+  }
 
   let totalWiggle = 0;
   let wigglePoints = 0;
 
+  // Adaptive normalization based on data size
+  const datasetSize = eyeData.length;
+  const adaptiveMaxWiggle = Math.max(40, Math.min(100, datasetSize * 0.2));
+
+  // Prepare interpolated targets to match eye data length
   const interpolatedTargets: Point[] = [];
-  if (targetData.length !== eyeData.length) {
-    for (let i = 0; i < eyeData.length; i++) {
-      const targetIndex = Math.floor((i / eyeData.length) * targetData.length);
-      interpolatedTargets[i] = targetData[targetIndex];
+  try {
+    if (targetData.length !== eyeData.length) {
+      for (let i = 0; i < eyeData.length; i++) {
+        const targetIndex = Math.floor((i / eyeData.length) * targetData.length);
+        if (targetIndex >= 0 && targetIndex < targetData.length) {
+          interpolatedTargets[i] = targetData[targetIndex];
+        } else {
+          // Handle potential out of bounds error
+          interpolatedTargets[i] = targetData[targetData.length - 1];
+        }
+      }
+    } else {
+      interpolatedTargets.push(...targetData);
     }
-  } else {
-    interpolatedTargets.push(...targetData);
+
+    // Calculate wiggle from unwanted movements
+    for (let i = 1; i < eyeData.length; i++) {
+      // Validate data points
+      if (
+        !eyeData[i] ||
+        !eyeData[i - 1] ||
+        !interpolatedTargets[i] ||
+        !interpolatedTargets[i - 1]
+      ) {
+        continue;
+      }
+
+      const prevTarget = interpolatedTargets[i - 1];
+      const currentTarget = interpolatedTargets[i];
+
+      const targetDX = Math.abs(currentTarget.x - prevTarget.x);
+      const targetDY = Math.abs(currentTarget.y - prevTarget.y);
+
+      const eyeDX = Math.abs(eyeData[i].x - eyeData[i - 1].x);
+      const eyeDY = Math.abs(eyeData[i].y - eyeData[i - 1].y);
+
+      if (targetDX > targetDY) {
+        if (eyeDY > WIGGLE_THRESHOLD) {
+          totalWiggle += eyeDY;
+          wigglePoints++;
+        }
+      } else if (targetDY > targetDX) {
+        if (eyeDX > WIGGLE_THRESHOLD) {
+          totalWiggle += eyeDX;
+          wigglePoints++;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in wiggle score calculation:', error);
+    return 0;
   }
 
-  for (let i = 1; i < eyeData.length; i++) {
-    const prevTarget = interpolatedTargets[i - 1];
-    const currentTarget = interpolatedTargets[i];
-
-    const targetDX = Math.abs(currentTarget.x - prevTarget.x);
-    const targetDY = Math.abs(currentTarget.y - prevTarget.y);
-
-    const eyeDX = Math.abs(eyeData[i].x - eyeData[i - 1].x);
-    const eyeDY = Math.abs(eyeData[i].y - eyeData[i - 1].y);
-
-    if (targetDX > targetDY) {
-      if (eyeDY > WIGGLE_THRESHOLD) {
-        totalWiggle += eyeDY;
-        wigglePoints++;
-      }
-    } else if (targetDY > targetDX) {
-      if (eyeDX > WIGGLE_THRESHOLD) {
-        totalWiggle += eyeDX;
-        wigglePoints++;
-      }
-    }
+  // Calculate raw wiggle score - if no wiggle points, return 0 (perfect score)
+  if (wigglePoints === 0) {
+    return 0;
   }
 
-  return wigglePoints > 0 ? totalWiggle / wigglePoints : 0;
+  const rawWiggleScore = totalWiggle / wigglePoints;
+
+  // Use a more contextual normalization based on the dataset size
+  const normalizedWiggleScore = Math.min(1, Math.max(0, rawWiggleScore / adaptiveMaxWiggle));
+
+  // Log for debugging
+  console.log('Wiggle calculation:', {
+    eyeDataPoints: eyeData.length,
+    wigglePoints,
+    totalWiggle,
+    rawWiggleScore,
+    adaptiveMaxWiggle,
+    normalizedWiggleScore,
+    accuracyPercentage: (100 - normalizedWiggleScore * 100).toFixed(1) + '%',
+  });
+
+  return normalizedWiggleScore;
 }
 
 /**
@@ -361,76 +413,72 @@ function determineSquarePattern(eyePositions: Point[], targetPositions: Point[])
 }
 
 /**
- * Find potential corner points in a path
+ * Simplify a path by removing points that are very close to each other
  */
-function findCornerPoints(points: Point[]): Point[] {
-  if (points.length < 4) return [];
-
-  const corners: Point[] = [];
-  const angleThreshold = 30; // degrees
-
-  // Simplify the path to focus on major direction changes
-  const simplifiedPath = simplifyPath(points, 5);
-
-  for (let i = 1; i < simplifiedPath.length - 1; i++) {
-    const prev = simplifiedPath[i - 1];
-    const current = simplifiedPath[i];
-    const next = simplifiedPath[i + 1];
-
-    // Calculate vectors and angle
-    const v1 = { x: current.x - prev.x, y: current.y - prev.y };
-    const v2 = { x: next.x - current.x, y: next.y - current.y };
-
-    // Calculate the angle between vectors (in degrees)
-    const angle = calculateAngle(v1, v2);
-
-    // If the angle is significant, consider it a corner
-    if (angle > angleThreshold) {
-      corners.push(current);
-    }
-  }
-
-  return corners;
-}
-
-/**
- * Calculate angle between two vectors in degrees
- */
-function calculateAngle(v1: Point, v2: Point): number {
-  const dot = v1.x * v2.x + v1.y * v2.y;
-  const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-  const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-
-  if (mag1 === 0 || mag2 === 0) return 0;
-
-  const cosAngle = dot / (mag1 * mag2);
-  const radians = Math.acos(Math.min(Math.max(cosAngle, -1), 1));
-  return radians * (180 / Math.PI);
-}
-
-/**
- * Simplify a path by removing points that are too close to each other
- */
-function simplifyPath(points: Point[], minDistance: number): Point[] {
-  if (points.length <= 2) return [...points];
+export function simplifyPath(points: Point[], threshold: number = 5): Point[] {
+  if (points.length <= 2) return points;
 
   const result: Point[] = [points[0]];
-  let lastPoint = points[0];
+  let lastAddedPoint = points[0];
 
   for (let i = 1; i < points.length; i++) {
-    const dist = calculateDistance(lastPoint, points[i]);
-    if (dist > minDistance) {
+    const distance = calculateDistance(lastAddedPoint, points[i]);
+    if (distance > threshold) {
       result.push(points[i]);
-      lastPoint = points[i];
+      lastAddedPoint = points[i];
     }
   }
 
-  // Ensure we include the last point if it's not already included
+  // Always include the last point
   if (result[result.length - 1] !== points[points.length - 1]) {
     result.push(points[points.length - 1]);
   }
 
   return result;
+}
+
+/**
+ * Find corner points in an eye tracking path (potential square corners)
+ */
+export function findCornerPoints(points: Point[], angleTolerance: number = 45): Point[] {
+  if (points.length < 5) return [];
+
+  // First simplify the path to reduce noise
+  const simplifiedPath = simplifyPath(points, 8);
+  if (simplifiedPath.length < 5) return [];
+
+  const cornerPoints: Point[] = [];
+  const angleThreshold = Math.cos(((90 - angleTolerance) * Math.PI) / 180); // Convert to radians
+
+  for (let i = 2; i < simplifiedPath.length - 2; i++) {
+    const p1 = simplifiedPath[i - 2];
+    const p2 = simplifiedPath[i];
+    const p3 = simplifiedPath[i + 2];
+
+    // Calculate vectors
+    const v1 = { x: p2.x - p1.x, y: p2.y - p1.y };
+    const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+
+    // Normalize vectors
+    const l1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+    const l2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+
+    if (l1 === 0 || l2 === 0) continue;
+
+    const v1Norm = { x: v1.x / l1, y: v1.y / l1 };
+    const v2Norm = { x: v2.x / l2, y: v2.y / l2 };
+
+    // Calculate dot product
+    const dotProduct = v1Norm.x * v2Norm.x + v1Norm.y * v2Norm.y;
+
+    // If dot product is close to 0, vectors are perpendicular (90 degrees)
+    if (Math.abs(dotProduct) < angleThreshold) {
+      cornerPoints.push(simplifiedPath[i]);
+    }
+  }
+
+  // Return 4 corners at most (for square pattern)
+  return cornerPoints.slice(0, 4);
 }
 
 /**
@@ -476,48 +524,49 @@ function determineRiskAssessment(
   deviationScore: number,
   isSquarePattern: boolean
 ): string {
-  // Define thresholds for metrics
-  const SACCADE_THRESHOLD_HIGH = 4.0; // High saccade frequency may indicate attention issues
-  const SACCADE_THRESHOLD_MED = 2.5;
+  // Input validation
+  if (isNaN(wiggleScore) || wiggleScore < 0) {
+    console.warn('Invalid wiggle score in risk assessment:', wiggleScore);
+    wiggleScore = 0; // Default to best case if invalid
+  }
 
-  const FIXATION_THRESHOLD_LOW = 150; // Low fixation duration may indicate attention issues
-  const FIXATION_THRESHOLD_MED = 250;
+  // Clamp wiggle score to 0-1 range to ensure accuracy calculation works correctly
+  wiggleScore = Math.min(1, Math.max(0, wiggleScore));
 
-  const WIGGLE_THRESHOLD_HIGH = 0.5; // High wiggle score may indicate motor control issues
-  const WIGGLE_THRESHOLD_MED = 0.3;
+  // Convert wiggle score to a percentage (0-100%)
+  // wiggleScore is now normalized between 0-1
+  const wigglePercentage = wiggleScore * 100;
 
-  const DEVIATION_THRESHOLD_HIGH = 0.4; // High deviation may indicate tracking issues
-  const DEVIATION_THRESHOLD_MED = 0.2;
+  // Calculate an overall tracking accuracy percentage (higher is better)
+  const trackingAccuracy = Math.max(0, 100 - wigglePercentage);
 
-  // Count how many metrics are in concerning ranges
-  let highRiskFactors = 0;
-  let medRiskFactors = 0;
+  // Define thresholds based on requirements
+  const EXCELLENT_THRESHOLD = 80; // 80% or higher is perfectly normal
+  const GOOD_THRESHOLD = 60; // Above 60% is no risk
 
-  // Check saccade frequency
-  if (saccadeFrequency > SACCADE_THRESHOLD_HIGH) highRiskFactors++;
-  else if (saccadeFrequency > SACCADE_THRESHOLD_MED) medRiskFactors++;
+  // Log the metrics for debugging
+  console.log('Eye metrics:', {
+    wiggleScore,
+    wigglePercentage,
+    trackingAccuracy,
+    saccadeFrequency,
+    fixationDuration,
+    deviationScore,
+    isSquarePattern,
+  });
 
-  // Check fixation duration (lower is worse)
-  if (fixationDuration < FIXATION_THRESHOLD_LOW) highRiskFactors++;
-  else if (fixationDuration < FIXATION_THRESHOLD_MED) medRiskFactors++;
-
-  // Check wiggle score
-  if (wiggleScore > WIGGLE_THRESHOLD_HIGH) highRiskFactors++;
-  else if (wiggleScore > WIGGLE_THRESHOLD_MED) medRiskFactors++;
-
-  // Check deviation score
-  if (deviationScore > DEVIATION_THRESHOLD_HIGH) highRiskFactors++;
-  else if (deviationScore > DEVIATION_THRESHOLD_MED) medRiskFactors++;
-
-  // Square pattern is a significant indicator
-  if (!isSquarePattern) highRiskFactors++;
-
-  // Determine overall risk based on the number of concerning metrics
-  if (highRiskFactors >= 2) {
-    return 'High';
-  } else if (highRiskFactors === 1 || medRiskFactors >= 2) {
+  // Risk assessment based on accuracy percentage
+  if (trackingAccuracy >= EXCELLENT_THRESHOLD) {
+    // 80% or higher is perfectly normal
+    return 'Low';
+  } else if (trackingAccuracy > GOOD_THRESHOLD) {
+    // Above 60% is no risk
+    return 'Low';
+  } else if (trackingAccuracy >= 55) {
+    // 55-60% (inclusive) is moderate risk
     return 'Moderate';
   } else {
-    return 'Low';
+    // Below 55% is high risk
+    return 'High';
   }
 }
