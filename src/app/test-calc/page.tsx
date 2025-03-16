@@ -7,8 +7,19 @@ import {
 } from '@/features/eyeTracking/dataProcessing';
 import { Point } from '@/features/eyeTracking/AnimatedBall';
 
+interface TestResult {
+  name: string;
+  eyeData: Point[];
+  expectedAccuracy: number;
+  wiggleScore?: number;
+  deviationScore?: number;
+  calculatedAccuracy?: number;
+  accuracyDifference?: number;
+  riskLevel?: string;
+}
+
 const TestCalcPage: React.FC = () => {
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<TestResult[]>([]);
 
   // Create test datasets with different accuracy levels
   const generateTestData = () => {
@@ -119,17 +130,17 @@ const TestCalcPage: React.FC = () => {
             {results.map((result, index) => (
               <tr key={index} className="border-t">
                 <td className="p-2">{result.name}</td>
-                <td className="p-2">{result.wiggleScore.toFixed(4)}</td>
-                <td className="p-2">{result.calculatedAccuracy.toFixed(1)}%</td>
+                <td className="p-2">{result.wiggleScore?.toFixed(4) || 'N/A'}</td>
+                <td className="p-2">{result.calculatedAccuracy?.toFixed(1) || 'N/A'}%</td>
                 <td className="p-2">{result.expectedAccuracy}%</td>
                 <td
                   className="p-2"
-                  style={{ color: Math.abs(result.accuracyDifference) > 10 ? 'red' : 'green' }}
+                  style={{ color: Math.abs(result.accuracyDifference || 0) > 10 ? 'red' : 'green' }}
                 >
-                  {result.accuracyDifference > 0 ? '+' : ''}
-                  {result.accuracyDifference.toFixed(1)}%
+                  {result.accuracyDifference && result.accuracyDifference > 0 ? '+' : ''}
+                  {result.accuracyDifference?.toFixed(1) || 'N/A'}%
                 </td>
-                <td className="p-2">{result.riskLevel}</td>
+                <td className="p-2">{result.riskLevel || 'N/A'}</td>
               </tr>
             ))}
           </tbody>
