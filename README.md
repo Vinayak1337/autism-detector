@@ -82,7 +82,7 @@ User dashboard to access past assessments and start new tests (requires authenti
 
 ### Testing Process Flow
 
-1. **Initial Setup**: The user grants webcam permission and positions themselves in front of the camera
+1. **Initial Setup**: The user grants webcam permission and positions themselves in front of their camera
 2. **Calibration**: The system detects the face and eyes to ensure proper tracking
 3. **Test Execution**: A ball moves in a square pattern, and the user is instructed to follow it with their eyes
 4. **Data Collection**: The application collects approximately 30 seconds of eye movement data
